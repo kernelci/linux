@@ -11,6 +11,9 @@
 #include <linux/utime.h>
 #include <linux/file.h>
 #include <linux/memblock.h>
+#if 1
+#include <linux/of_fdt.h>
+#endif
 
 static ssize_t __init xwrite(int fd, const char *p, size_t count)
 {
@@ -657,6 +660,19 @@ static int __init populate_rootfs(void)
 	char *err = unpack_to_rootfs(__initramfs_start, __initramfs_size);
 	if (err)
 		panic("%s", err); /* Failed to decompress INTERNAL initramfs */
+
+#if 1
+	{
+		const char *name = of_flat_dt_get_machine_name();
+		if (!name)
+			printk(KERN_EMERG "No device tree machine name");
+		else if (!strcmp(name, "linux,dummy-virt"))
+			panic("THIS MUST FAIL ON QEMU");
+		else if (!strcmp(name, "Hardkernel Odroid XU3"))
+			panic("THIS MUST ALSO FAIL ON XU3");
+	}
+
+#endif
 
 	if (!initrd_start || IS_ENABLED(CONFIG_INITRAMFS_FORCE))
 		goto done;
