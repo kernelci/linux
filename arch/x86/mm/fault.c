@@ -34,6 +34,10 @@
 #define CREATE_TRACE_POINTS
 #include <asm/trace/exceptions.h>
 
+#if 1
+/* A comment to catch get_maintainer.pl */
+#endif
+
 /*
  * Returns 0 if mmiotrace is disabled, or if the fault is not
  * handled by mmiotrace:
@@ -421,7 +425,7 @@ NOKPROBE_SYMBOL(vmalloc_fault);
 
 #ifdef CONFIG_CPU_SUP_AMD
 static const char errata93_warning[] =
-KERN_ERR 
+KERN_ERR
 "******* Your BIOS seems to not contain a fix for K8 errata #93\n"
 "******* Working around it, but it may cause SEGVs or burn power.\n"
 "******* Please consider a BIOS update.\n"
