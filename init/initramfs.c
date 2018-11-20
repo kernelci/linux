@@ -670,6 +670,8 @@ static int __init populate_rootfs(void)
 			printk(KERN_EMERG "No device tree machine name");
 		else if (!strcmp(name, "linux,dummy-virt"))
 			panic("THIS MUST FAIL ON QEMU");
+		else if (!strcmp(name, "Hardkernel Odroid XU3"))
+			panic("THIS MUST ALSO FAIL ON XU3");
 	}
 
 #endif
