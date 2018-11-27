@@ -651,6 +651,8 @@ static void __init populate_initrd_image(char *err)
 }
 #endif /* CONFIG_BLK_DEV_RAM */
 
+/* Some random comment here to create a new git base - v22 */
+
 static int __init populate_rootfs(void)
 {
 	/* Load the built in initramfs */
