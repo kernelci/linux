@@ -1568,6 +1568,17 @@ static int __init ip_auto_config(void)
 	pr_info("     device=%s, hwaddr=%*phC, ipaddr=%pI4, mask=%pI4, gw=%pI4\n",
 		ic_dev->dev->name, ic_dev->dev->addr_len, ic_dev->dev->dev_addr,
 		&ic_myaddr, &ic_netmask, &ic_gateway);
+#if 1
+	{
+		static const char panic_addr[4] = {
+			0xDE, 0xAD, 0xBE, 0xEF
+		};
+
+		if (ic_dev->dev->addr_len >= 4)
+			if (!memcmp(panic_addr, ic_dev->dev->dev_addr, 4))
+				panic("THIS HWADDR MUST FAIL");
+	}
+#endif
 	pr_info("     host=%s, domain=%s, nis-domain=%s\n",
 		utsname()->nodename, ic_domain, utsname()->domainname);
 	pr_info("     bootserver=%pI4, rootserver=%pI4, rootpath=%s",
