@@ -14,9 +14,10 @@
 #  Copyright 2011 Linaro
 
 clean_up() {
+	RET=$1
 	rm -f $TMP_FILE
 	rm -f $MERGE_FILE
-	exit
+	exit ${RET}
 }
 trap clean_up HUP INT TERM
 
@@ -171,6 +172,10 @@ fi
 # alldefconfig: Fills in any missing symbols with Kconfig default
 # allnoconfig: Fills in any missing symbols with # CONFIG_* is not set
 make KCONFIG_ALLCONFIG=$TMP_FILE $OUTPUT_ARG $ALLTARGET
+RET=$?
+if [ "$RET" != "0" ]; then
+	clean_up $RET
+fi
 
 
 # Check all specified config values took (might have missed-dependency issues)
