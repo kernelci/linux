@@ -664,6 +664,8 @@ static int __init populate_rootfs(void)
 		panic("%s", err); /* Failed to decompress INTERNAL initramfs */
 
 #if 1
+	pr_crit("THIS IS A CRITICAL MESSAGE\n");
+
 	{
 		const char *name = of_flat_dt_get_machine_name();
 		if (!name)
