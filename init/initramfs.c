@@ -658,6 +658,10 @@ static int __init populate_rootfs(void)
 	if (err)
 		panic("%s", err); /* Failed to decompress INTERNAL initramfs */
 
+#if 1
+	pr_crit("THIS IS A CRITICAL MESSAGE\n");
+#endif
+
 	if (!initrd_start || IS_ENABLED(CONFIG_INITRAMFS_FORCE))
 		goto done;
 
