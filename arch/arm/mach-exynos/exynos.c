@@ -194,7 +194,7 @@ static void __init exynos_dt_fixup(void)
 
 DT_MACHINE_START(EXYNOS_DT, "Samsung Exynos (Flattened Device Tree)")
 	.l2c_aux_val	= 0x3c400001,
-	.l2c_aux_mask	= 0xc20fffff,
+	.l2c_aux_mask	= 0xc20ffff8,
 	.smp		= smp_ops(exynos_smp_ops),
 	.map_io		= exynos_init_io,
 	.init_early	= exynos_firmware_init,
