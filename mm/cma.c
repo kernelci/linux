@@ -36,9 +36,8 @@
 
 #include "cma.h"
 
-/* modify here */
-LIST_HEAD(cma_areas);
-static unsigned int cma_area_count;
+struct cma cma_areas[MAX_CMA_AREAS];
+unsigned cma_area_count;
 static DEFINE_MUTEX(cma_mutex);
 
 phys_addr_t cma_get_base(const struct cma *cma)
@@ -144,10 +143,10 @@ out_error:
 
 static int __init cma_init_reserved_areas(void)
 {
-	struct cma *c;
+	int i;
 
-	list_for_each_entry(c, &cma_areas, areas)
-		cma_activate_area(c);
+	for (i = 0; i < cma_area_count; i++)
+		cma_activate_area(&cma_areas[i]);
 
 	return 0;
 }
@@ -173,6 +172,12 @@ int __init cma_init_reserved_mem(phys_addr_t base, phys_addr_t size,
 	struct cma *cma;
 	phys_addr_t alignment;
 
+	/* Sanity checks */
+	if (cma_area_count == ARRAY_SIZE(cma_areas)) {
+		pr_err("Not enough slots for CMA reserved regions!\n");
+		return -ENOSPC;
+	}
+
 	if (!size || !memblock_is_region_reserved(base, size))
 		return -EINVAL;
 
@@ -187,17 +192,12 @@ int __init cma_init_reserved_mem(phys_addr_t base, phys_addr_t size,
 	if (ALIGN(base, alignment) != base || ALIGN(size, alignment) != size)
 		return -EINVAL;
 
-	cma = memblock_alloc(sizeof(*cma), sizeof(long));
-	if (!cma) {
-		pr_err("Unable to allocate CMA descriptor!\n");
-		return -ENOSPC;
-	}
-	list_add_tail(&cma->areas, &cma_areas);
-
 	/*
 	 * Each reserved area must be initialised later, when more kernel
 	 * subsystems (like slab allocator) are available.
 	 */
+	cma = &cma_areas[cma_area_count];
+
 	if (name)
 		snprintf(cma->name, CMA_MAX_NAME, name);
 	else
@@ -252,6 +252,11 @@ int __init cma_declare_contiguous_nid(phys_addr_t base,
 	highmem_start = __pa(high_memory - 1) + 1;
 	pr_debug("%s(size %pa, base %pa, limit %pa alignment %pa)\n",
 		__func__, &size, &base, &limit, &alignment);
+
+	if (cma_area_count == ARRAY_SIZE(cma_areas)) {
+		pr_err("Not enough slots for CMA reserved regions!\n");
+		return -ENOSPC;
+	}
 
 	if (!size)
 		return -EINVAL;
@@ -525,10 +530,10 @@ bool cma_release(struct cma *cma, const struct page *pages, unsigned int count)
 
 int cma_for_each_area(int (*it)(struct cma *cma, void *data), void *data)
 {
-	struct cma *c;
+	int i;
 
-	list_for_each_entry(c, &cma_areas, areas) {
-		int ret = it(c, data);
+	for (i = 0; i < cma_area_count; i++) {
+		int ret = it(&cma_areas[i], data);
 
 		if (ret)
 			return ret;
