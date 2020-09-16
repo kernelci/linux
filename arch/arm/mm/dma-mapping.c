@@ -383,33 +383,25 @@ postcore_initcall(atomic_pool_init);
 struct dma_contig_early_reserve {
 	phys_addr_t base;
 	unsigned long size;
-	struct list_head areas;
 };
 
-static __initdata LIST_HEAD(dma_mmu_remap_areas);
+static struct dma_contig_early_reserve dma_mmu_remap[MAX_CMA_AREAS] __initdata;
+
+static int dma_mmu_remap_num __initdata;
 
 void __init dma_contiguous_early_fixup(phys_addr_t base, unsigned long size)
 {
-	struct dma_contig_early_reserve *d;
-
-	d = memblock_alloc(sizeof(*d), sizeof(void *));
-	if (!d) {
-		pr_err("Unable to allocate dma_contig_early_reserve struct!\n");
-		return;
-	}
-
-	d->base = base;
-	d->size = size;
-	list_add_tail(&d->areas, &dma_mmu_remap_areas);
+	dma_mmu_remap[dma_mmu_remap_num].base = base;
+	dma_mmu_remap[dma_mmu_remap_num].size = size;
+	dma_mmu_remap_num++;
 }
 
 void __init dma_contiguous_remap(void)
 {
-	struct dma_contig_early_reserve *d;
-
-	list_for_each_entry(d, &dma_mmu_remap_areas, areas) {
-		phys_addr_t start = d->base;
-		phys_addr_t end = start + d->size;
+	int i;
+	for (i = 0; i < dma_mmu_remap_num; i++) {
+		phys_addr_t start = dma_mmu_remap[i].base;
+		phys_addr_t end = start + dma_mmu_remap[i].size;
 		struct map_desc map;
 		unsigned long addr;
 

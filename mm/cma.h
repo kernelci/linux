@@ -15,11 +15,11 @@ struct cma {
 	spinlock_t mem_head_lock;
 	struct debugfs_u32_array dfs_bitmap;
 #endif
-	struct list_head areas;
 	char name[CMA_MAX_NAME];
 };
 
-extern struct list_head cma_areas;
+extern struct cma cma_areas[MAX_CMA_AREAS];
+extern unsigned cma_area_count;
 
 static inline unsigned long cma_bitmap_maxno(struct cma *cma)
 {
