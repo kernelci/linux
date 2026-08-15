@@ -4614,7 +4614,7 @@ static void process_deferred_reenq_users(struct rq *rq)
 
 	while (true) {
 		struct scx_dispatch_q *dsq;
-		u64 reenq_flags;
+		u64 dsq_id, reenq_flags;
 
 		scoped_guard (raw_spinlock, &rq->scx.deferred_reenq_lock) {
 			struct scx_deferred_reenq_user *dru =
@@ -4637,7 +4637,12 @@ static void process_deferred_reenq_users(struct rq *rq)
 		/* see schedule_dsq_reenq() */
 		smp_mb();
 
-		BUG_ON(dsq->id & SCX_DSQ_FLAG_BUILTIN);
+		/* destroy_dsq() may have raced and invalidated @dsq, nothing to reenq */
+		dsq_id = READ_ONCE(dsq->id);
+		if (unlikely(dsq_id == SCX_DSQ_INVALID))
+			continue;
+
+		BUG_ON(dsq_id & SCX_DSQ_FLAG_BUILTIN);
 		reenq_user(rq, dsq, reenq_flags);
 	}
 }
@@ -6477,12 +6482,9 @@ static void scx_root_disable(struct scx_sched *sch)
 	percpu_up_write(&scx_fork_rwsem);
 
 	/*
-	 * Invalidate all the rq clocks to prevent getting outdated
-	 * rq clocks from a previous scx scheduler.
-	 *
-	 * Also re-balance the dl_server bandwidth reservations: detach
-	 * ext_server (no more sched_ext tasks) and reinstate fair_server if it
-	 * was previously detached because we were running in full mode.
+	 * Re-balance the dl_server bandwidth reservations: detach ext_server
+	 * (no more sched_ext tasks) and reinstate fair_server if it was
+	 * previously detached because we were running in full mode.
 	 *
 	 * Unlike the enable path, this runs on a recovery path that cannot
 	 * fail, so we use dl_server_swap_bw() to atomically free ext_server's
@@ -6494,8 +6496,6 @@ static void scx_root_disable(struct scx_sched *sch)
 	 */
 	for_each_possible_cpu(cpu) {
 		struct rq *rq = cpu_rq(cpu);
-
-		scx_rq_clock_invalidate(rq);
 
 		scoped_guard(rq_lock_irqsave, rq) {
 			update_rq_clock(rq);
@@ -10609,19 +10609,23 @@ static void scx_read_events(struct scx_sched *sch, struct scx_event_stats *event
 	}
 }
 
-/*
- * scx_bpf_events - Get a system-wide event counter to
+/**
+ * scx_bpf_events - Read the event counters of the calling scheduler
  * @events: output buffer from a BPF program
- * @events__sz: @events len, must end in '__sz'' for the verifier
+ * @events__sz: @events len, must end in '__sz' for the verifier
+ * @aux: implicit BPF argument to access bpf_prog_aux hidden from BPF progs
+ *
+ * Read the event counters of the scheduler associated with the calling program.
+ * @events is zeroed when no scheduler can be resolved.
  */
-__bpf_kfunc void scx_bpf_events(struct scx_event_stats *events,
-				size_t events__sz)
+__bpf_kfunc void scx_bpf_events(struct scx_event_stats *events, size_t events__sz,
+				const struct bpf_prog_aux *aux)
 {
 	struct scx_sched *sch;
 	struct scx_event_stats e_sys;
 
 	rcu_read_lock();
-	sch = rcu_dereference(scx_root);
+	sch = scx_prog_sched(aux);
 	if (sch)
 		scx_read_events(sch, &e_sys);
 	else
@@ -10744,7 +10748,7 @@ BTF_ID_FLAGS(func, scx_bpf_cpu_curr, KF_IMPLICIT_ARGS | KF_RET_NULL | KF_RCU_PRO
 BTF_ID_FLAGS(func, scx_bpf_cid_curr, KF_IMPLICIT_ARGS | KF_RET_NULL | KF_RCU_PROTECTED)
 BTF_ID_FLAGS(func, scx_bpf_tid_to_task, KF_RET_NULL | KF_RCU_PROTECTED)
 BTF_ID_FLAGS(func, scx_bpf_now)
-BTF_ID_FLAGS(func, scx_bpf_events)
+BTF_ID_FLAGS(func, scx_bpf_events, KF_IMPLICIT_ARGS)
 #ifdef CONFIG_CGROUP_SCHED
 BTF_ID_FLAGS(func, scx_bpf_task_cgroup, KF_IMPLICIT_ARGS | KF_RCU | KF_ACQUIRE)
 #endif
