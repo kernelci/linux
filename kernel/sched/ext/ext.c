@@ -377,9 +377,9 @@ static bool rq_is_open(struct rq *rq, u64 enq_flags)
 	 * If we're in the dispatch path holding rq lock, $curr may or may not
 	 * be ready depending on whether the on-going dispatch decides to extend
 	 * $curr's slice. We say yes here and resolve it at the end of dispatch.
-	 * See balance_one().
+	 * See dispatch_one().
 	 */
-	if (rq->scx.flags & SCX_RQ_IN_BALANCE)
+	if (rq->scx.flags & SCX_RQ_IN_DISPATCH)
 		return true;
 
 	/*
@@ -1020,7 +1020,7 @@ static void schedule_deferred(struct rq *rq)
 	/*
 	 * This is the fallback when schedule_deferred_locked() can't use
 	 * the cheaper balance callback or wakeup hook paths (the target
-	 * CPU is not in balance or wakeup). Currently, this is primarily
+	 * CPU is not in dispatch or wakeup). Currently, this is primarily
 	 * hit by reenqueue operations targeting a remote CPU.
 	 *
 	 * Queue on the target CPU. The deferred work can run from any CPU
@@ -1056,25 +1056,25 @@ static void schedule_deferred_locked(struct rq *rq)
 		return;
 
 	/*
-	 * If in balance, the balance callbacks will be called before rq lock is
-	 * released. Schedule one.
+	 * If in dispatch, the balance callbacks will be called before rq lock
+	 * is released. Schedule one.
 	 *
 	 *
 	 * We can't directly insert the callback into the
 	 * rq's list: The call can drop its lock and make the pending balance
 	 * callback visible to unrelated code paths that call rq_pin_lock().
 	 *
-	 * Just let balance_one() know that it must do it itself.
+	 * Just let dispatch_one() know that it must do it itself.
 	 */
-	if (rq->scx.flags & SCX_RQ_IN_BALANCE) {
+	if (rq->scx.flags & SCX_RQ_IN_DISPATCH) {
 		rq->scx.flags |= SCX_RQ_BAL_CB_PENDING;
 		return;
 	}
 
 	/*
 	 * No scheduler hooks available. Use the generic irq_work path. The
-	 * above WAKEUP and BALANCE paths should cover most of the cases and the
-	 * time to IRQ re-enable shouldn't be long.
+	 * above WAKEUP and DISPATCH paths should cover most of the cases and
+	 * the time to IRQ re-enable shouldn't be long.
 	 */
 	schedule_deferred(rq);
 }
@@ -1617,14 +1617,14 @@ static void rq_owned_post_enq(struct scx_sched *sch, struct rq *rq,
 		wakeup_preempt(rq, p, 0);
 
 	/*
-	 * If @rq is in balance, the CPU is already vacant and looking for the
+	 * If @rq is in dispatch, the CPU is already vacant and looking for the
 	 * next task to run. No need to preempt or trigger resched after moving
 	 * @p into its local DSQ.
 	 * Note that the wakeup_preempt() above may have already triggered
 	 * a resched if @rq->next_class was idle. It's harmless, since
 	 * need_resched is cleared immediately after task pick.
 	 */
-	if (rq->scx.flags & SCX_RQ_IN_BALANCE)
+	if (rq->scx.flags & SCX_RQ_IN_DISPATCH)
 		return;
 
 	if ((enq_flags & SCX_ENQ_PREEMPT) && p != rq->curr &&
@@ -2349,7 +2349,7 @@ static bool dequeue_task_scx(struct rq *rq, struct task_struct *p, int core_deq_
 	 *
 	 * @p may go through multiple stopping <-> running transitions between
 	 * here and put_prev_task_scx() if task attribute changes occur while
-	 * balance_one() leaves @rq unlocked. However, they don't contain any
+	 * dispatch_one() leaves @rq unlocked. However, they don't contain any
 	 * information meaningful to the BPF scheduler and can be suppressed by
 	 * skipping the callbacks if the task is !QUEUED.
 	 */
@@ -2977,14 +2977,14 @@ static inline void maybe_queue_balance_callback(struct rq *rq)
 	rq->scx.flags &= ~SCX_RQ_BAL_CB_PENDING;
 }
 
-static enum scx_dsp_verdict balance_one(struct rq *rq, struct task_struct *prev)
+static enum scx_dsp_verdict dispatch_one(struct rq *rq, struct task_struct *prev)
 {
 	struct scx_sched *sch = scx_root_protected_live();
 	enum scx_dsp_verdict verdict;
 	s32 cpu = cpu_of(rq);
 
 	lockdep_assert_rq_held(rq);
-	rq->scx.flags |= SCX_RQ_IN_BALANCE;
+	rq->scx.flags |= SCX_RQ_IN_DISPATCH;
 
 	scx_process_sync_ecaps(rq, prev);
 
@@ -3042,7 +3042,7 @@ static enum scx_dsp_verdict balance_one(struct rq *rq, struct task_struct *prev)
 		verdict = SCX_DSP_PREV;
 		goto has_tasks;
 	}
-	rq->scx.flags &= ~SCX_RQ_IN_BALANCE;
+	rq->scx.flags &= ~SCX_RQ_IN_DISPATCH;
 	return SCX_DSP_NONE;
 
 has_tasks:
@@ -3059,7 +3059,7 @@ has_tasks:
 	if (unlikely(rq->scx.local_dsq.nr > 1 && rq->scx.nr_immed))
 		scx_schedule_reenq_local(rq, 0);
 
-	rq->scx.flags &= ~SCX_RQ_IN_BALANCE;
+	rq->scx.flags &= ~SCX_RQ_IN_DISPATCH;
 	return verdict;
 }
 
@@ -3160,7 +3160,7 @@ static void switch_class(struct rq *rq, struct task_struct *next)
 	 * preempted, and it regaining control of the CPU.
 	 *
 	 * ->cpu_release() complements ->cpu_acquire(), which is emitted the
-	 *  next time that balance_one() is invoked.
+	 *  next time that dispatch_one() is invoked.
 	 */
 	if (!rq->scx.cpu_released) {
 		if (sch->ops.cpu_release) {
@@ -3270,10 +3270,25 @@ switch_class:
 
 static void kick_sync_wait_bal_cb(struct rq *rq)
 {
-	struct scx_kick_syncs __rcu *ks = __this_cpu_read(scx_kick_syncs);
-	unsigned long *ksyncs = rcu_dereference_sched(ks)->syncs;
+	struct scx_kick_syncs __rcu *ks;
+	unsigned long *ksyncs;
 	bool waited;
 	s32 cpu;
+
+	/*
+	 * This callback is queued and normally flushed within @rq's own
+	 * scheduling pass. However, dispatch can drop the rq lock while it sits
+	 * queued, and lock takers in that window (the sched class change paths,
+	 * the scx task iterator) flush pending balance callbacks on release,
+	 * running this one on a foreign CPU whose snapshots are unrelated. The
+	 * kicked CPUs are already on their way to advance the kick_syncs being
+	 * waited on. Don't get in the way.
+	 */
+	if (unlikely(cpu_of(rq) != smp_processor_id()))
+		return;
+
+	ks = __this_cpu_read(scx_kick_syncs);
+	ksyncs = rcu_dereference_sched(ks)->syncs;
 
 	/*
 	 * Drop rq lock and enable IRQs while waiting. IRQs must be enabled
@@ -3326,7 +3341,7 @@ static enum scx_dsp_verdict dispatch_pick(struct rq *rq, struct rq_flags *rf,
 	enum scx_dsp_verdict verdict;
 
 	rq_unpin_lock(rq, rf);
-	verdict = balance_one(rq, prev);
+	verdict = dispatch_one(rq, prev);
 	rq_repin_lock(rq, rf);
 	maybe_queue_balance_callback(rq);
 
@@ -3339,11 +3354,6 @@ static enum scx_dsp_verdict dispatch_pick(struct rq *rq, struct rq_flags *rf,
 		rq->scx.kick_sync_pending = false;
 		queue_balance_callback(rq, &rq->scx.kick_sync_bal_cb,
 				       kick_sync_wait_bal_cb);
-	}
-
-	if (unlikely(verdict == SCX_DSP_PREV && prev->sched_class != &ext_sched_class)) {
-		WARN_ON_ONCE(scx_enable_state() == SCX_ENABLED);
-		verdict = SCX_DSP_LOCAL;
 	}
 
 	return verdict;
@@ -3364,12 +3374,12 @@ static enum scx_dsp_verdict dispatch_core_pick(struct rq *rq, struct rq_flags *r
 	u32 seq = rq->scx.lock_drop_seq;
 
 	/* another dispatch is in flight on @rq, let that handle it */
-	if (rq->scx.flags & SCX_RQ_IN_BALANCE)
+	if (rq->scx.flags & SCX_RQ_IN_DISPATCH)
 		return SCX_DSP_NONE;
 
 	rq_unpin_lock(rq, rf);
 
-	verdict = balance_one(rq, prev);
+	verdict = dispatch_one(rq, prev);
 
 	if (cpu_of(rq) == smp_processor_id()) {
 		maybe_queue_balance_callback(rq);
@@ -3392,16 +3402,9 @@ static enum scx_dsp_verdict dispatch_core_pick(struct rq *rq, struct rq_flags *r
 
 	rq_repin_lock(rq, rf);
 
-	/* if balance_one() released the rq lock, restart the selection */
+	/* if dispatch_one() released the rq lock, restart the selection */
 	if (rq->scx.lock_drop_seq != seq)
 		return SCX_DSP_RETRY;
-
-	/* see dispatch_pick() */
-	if (unlikely(verdict == SCX_DSP_PREV &&
-		     prev->sched_class != &ext_sched_class)) {
-		WARN_ON_ONCE(scx_enable_state() == SCX_ENABLED);
-		verdict = SCX_DSP_LOCAL;
-	}
 
 	return verdict;
 }
@@ -3435,7 +3438,7 @@ do_pick_task_scx(struct rq *rq, struct rq_flags *rf, bool force_scx)
 
 	/*
 	 * If any higher-priority sched class enqueued a runnable task on this
-	 * rq during balance_one(), abort and return RETRY_TASK, so that the
+	 * rq during dispatch_one(), abort and return RETRY_TASK, so that the
 	 * scheduler loop can restart.
 	 *
 	 * If @force_scx is true, always try to pick a SCHED_EXT task,
@@ -6075,7 +6078,7 @@ static void unbypass_renotify_idle(struct rq *rq, struct scx_sched *pos,
  *
  * - ops.dispatch() is ignored.
  *
- * - balance_one() does not report %SCX_DSP_PREV on non-zero slice as slice
+ * - dispatch_one() does not report %SCX_DSP_PREV on non-zero slice as slice
  *   can't be trusted. Whenever a tick triggers, the running task is rotated to
  *   the tail of the queue with core_sched_at touched.
  *
@@ -8457,13 +8460,13 @@ static bool can_skip_idle_kick(struct rq *rq)
 	 * We can skip idle kicking if @rq is going to go through at least one
 	 * full SCX scheduling cycle before going idle. Just checking whether
 	 * curr is not idle is insufficient because we could be racing
-	 * balance_one() trying to pull the next task from a remote rq, which
+	 * dispatch_one() trying to pull the next task from a remote rq, which
 	 * may fail, and @rq may become idle afterwards.
 	 *
 	 * The race window is small and we don't and can't guarantee that @rq is
 	 * only kicked while idle anyway. Skip only when sure.
 	 */
-	return !is_idle_task(rq->curr) && !(rq->scx.flags & SCX_RQ_IN_BALANCE);
+	return !is_idle_task(rq->curr) && !(rq->scx.flags & SCX_RQ_IN_DISPATCH);
 }
 
 static bool kick_one_cpu(s32 cpu, struct scx_sched_pcpu *pcpu, struct rq *this_rq,
@@ -9196,7 +9199,7 @@ __bpf_kfunc bool scx_bpf_dsq_move_to_local___v2(u64 dsq_id, u64 enq_flags,
 		/*
 		 * A successfully consumed task can be dequeued before it starts
 		 * running while the CPU is trying to migrate other dispatched
-		 * tasks. Bump nr_tasks to tell balance_one() to retry on empty
+		 * tasks. Bump nr_tasks to tell dispatch_one() to retry on empty
 		 * local DSQ.
 		 */
 		dspc->nr_tasks++;
