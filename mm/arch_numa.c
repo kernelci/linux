@@ -233,9 +233,6 @@ static int __init numa_register_nodes(void)
 		node_set_online(nid);
 	}
 
-	/* Setup online nodes to actual nodes*/
-	node_possible_map = numa_nodes_parsed;
-
 	return 0;
 }
 
@@ -291,7 +288,6 @@ static int __init dummy_numa_init(void)
 		pr_err("NUMA init failed\n");
 		return ret;
 	}
-	node_set(0, numa_nodes_parsed);
 
 	numa_off = true;
 	return 0;
