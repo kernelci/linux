@@ -999,7 +999,7 @@ static int adf4377_clk_register(struct adf4377_state *st)
 {
 	struct spi_device *spi = st->spi;
 	struct device *dev = &spi->dev;
-	struct clk_init_data init;
+	struct clk_init_data init = {};
 	struct clk_parent_data parent_data;
 	int ret;
 
