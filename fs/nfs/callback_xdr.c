@@ -360,6 +360,7 @@ static __be32 decode_rc_list(struct xdr_stream *xdr,
 	int i;
 	__be32 status;
 
+	rc_list->rcl_refcalls = NULL;
 	status = decode_sessionid(xdr, &rc_list->rcl_sessionid);
 	if (status)
 		goto out;
