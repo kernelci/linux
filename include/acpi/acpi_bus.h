@@ -162,10 +162,6 @@ struct acpi_hotplug_context {
  * -----------
  */
 
-bool acpi_of_match_device(const struct acpi_device *adev,
-			  const struct of_device_id *of_match_table,
-			  const struct of_device_id **of_id);
-
 /* Status (_STA) */
 
 struct acpi_device_status {
@@ -956,13 +952,6 @@ u32 arch_acpi_add_auto_dep(acpi_handle handle);
 static inline struct device *acpi_bus_get_primary_device(struct acpi_device *adev)
 {
 	return NULL;
-}
-
-static inline bool acpi_of_match_device(const struct acpi_device *adev,
-					const struct of_device_id *of_match_table,
-					const struct of_device_id **of_id)
-{
-	return false;
 }
 
 static inline int register_acpi_bus_type(void *bus) { return 0; }
