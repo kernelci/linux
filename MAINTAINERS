@@ -4971,7 +4971,7 @@ F:	tools/lib/bpf/
 
 BPF [MEMORY MANAGEMENT EXTENSIONS]
 M:	Roman Gushchin <roman.gushchin@linux.dev>
-M:	JP Kobryn <inwardvessel@gmail.com>
+M:	JP Kobryn <jp.kobryn@linux.dev>
 M:	Shakeel Butt <shakeel.butt@linux.dev>
 L:	bpf@vger.kernel.org
 L:	linux-mm@kvack.org
@@ -12149,7 +12149,7 @@ F:	drivers/tty/hvc/
 
 HUNG TASK DETECTOR
 M:	Andrew Morton <akpm@linux-foundation.org>
-R:	Lance Yang <lance.yang@linux.dev>
+M:	Lance Yang <lance.yang@linux.dev>
 R:	Masami Hiramatsu <mhiramat@kernel.org>
 R:	Petr Mladek <pmladek@suse.com>
 L:	linux-kernel@vger.kernel.org
@@ -25619,7 +25619,6 @@ M:	Phillip Lougher <phillip@squashfs.org.uk>
 L:	squashfs-devel@lists.sourceforge.net (subscribers-only)
 S:	Maintained
 W:	http://squashfs.org.uk
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/pkl/squashfs-next.git
 F:	Documentation/filesystems/squashfs.rst
 F:	fs/squashfs/
 
