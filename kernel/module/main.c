@@ -3581,7 +3581,8 @@ static int load_module(struct load_info *info, const char __user *uargs,
 			goto sysfs_cleanup;
 	}
 
-	if (codetag_load_module(mod))
+	err = codetag_load_module(mod);
+	if (err)
 		goto sysfs_cleanup;
 
 	/* Get rid of temporary copy. */
