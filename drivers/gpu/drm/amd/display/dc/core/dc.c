@@ -1221,7 +1221,7 @@ static void apply_ctx_interdependent_lock(struct dc *dc,
 			if (stream == pipe_ctx->stream) {
 				if (resource_is_pipe_type(pipe_ctx, OPP_HEAD) &&
 					(pipe_ctx->plane_state || old_pipe_ctx->plane_state))
-					dc->hwss.pipe_control_lock(dc, pipe_ctx, lock);
+					hwss_pipe_control_lock(dc, pipe_ctx, lock);
 			}
 		}
 	}
@@ -1229,7 +1229,9 @@ static void apply_ctx_interdependent_lock(struct dc *dc,
 
 static void dc_update_visual_confirm_color(struct dc *dc, struct dc_state *context, struct pipe_ctx *pipe_ctx)
 {
-	if (dc->debug.visual_confirm & VISUAL_CONFIRM_EXPLICIT) {
+	/* EXPLICIT and DM passthrough both apply the per-plane color set on the plane state */
+	if ((dc->debug.visual_confirm & VISUAL_CONFIRM_EXPLICIT) ||
+		dc->debug.visual_confirm == VISUAL_CONFIRM_DM_PASSTHROUGH) {
 		memcpy(&pipe_ctx->visual_confirm_color, &pipe_ctx->plane_state->visual_confirm_color,
 		sizeof(pipe_ctx->visual_confirm_color));
 		return;
@@ -3352,6 +3354,10 @@ static void copy_surface_update_to_plane(
 			surface->time.index = 0;
 
 		surface->triplebuffer_flips = srf_update->flip_addr->triplebuffer_flips;
+
+		/* DM passthrough mode: stash the per-flip color on the plane for dc_update_visual_confirm_color */
+		if (surface->ctx->dc->debug.visual_confirm == VISUAL_CONFIRM_DM_PASSTHROUGH)
+			surface->visual_confirm_color = srf_update->flip_addr->visual_confirm_color;
 	}
 
 	if (srf_update->scaling_info) {
@@ -4367,8 +4373,8 @@ static void commit_planes_do_stream_update(struct dc *dc,
 
 		if (resource_is_pipe_type(pipe_ctx, OTG_MASTER) && pipe_ctx->stream == stream) {
 
-			if (stream_update->periodic_interrupt && dc->hwss.setup_periodic_interrupt)
-				dc->hwss.setup_periodic_interrupt(dc, pipe_ctx);
+			if (stream_update->periodic_interrupt)
+				hwss_setup_periodic_interrupt(dc, pipe_ctx);
 
 			if ((stream_update->hdr_static_metadata && !stream->use_dynamic_meta) ||
 					stream_update->vrr_infopacket ||
@@ -4967,9 +4973,7 @@ static void commit_planes_for_stream(struct dc *dc,
 						top_pipe_to_program->stream_res.tg);
 		}
 
-	if (dc->hwss.wait_for_dcc_meta_propagation) {
-		dc->hwss.wait_for_dcc_meta_propagation(dc, top_pipe_to_program);
-	}
+	hwss_hubp_wait_for_dcc_meta_prop(dc, top_pipe_to_program);
 
 	if (dc->hwseq->funcs.wait_for_pipe_update_if_needed)
 		dc->hwseq->funcs.wait_for_pipe_update_if_needed(dc, top_pipe_to_program, update_type < UPDATE_TYPE_FULL);
@@ -4993,7 +4997,7 @@ static void commit_planes_for_stream(struct dc *dc,
 		 *  plane addr update event triggers to be synchronized.
 		 *  top_pipe_to_program is expected to never be NULL
 		 */
-		dc->hwss.pipe_control_lock(dc, top_pipe_to_program, true);
+		hwss_pipe_control_lock(dc, top_pipe_to_program, true);
 	}
 
 	dc_dmub_update_dirty_rect(dc, surface_count, stream, srf_updates, context);
@@ -5015,7 +5019,7 @@ static void commit_planes_for_stream(struct dc *dc,
 		if (should_lock_all_pipes && dc->hwss.interdependent_update_lock) {
 			dc->hwss.interdependent_update_lock(dc, context, false);
 		} else {
-			dc->hwss.pipe_control_lock(dc, top_pipe_to_program, false);
+			hwss_pipe_control_lock(dc, top_pipe_to_program, false);
 		}
 		dc->hwss.post_unlock_program_front_end(dc, context);
 
@@ -5202,7 +5206,7 @@ static void commit_planes_for_stream(struct dc *dc,
 	if (should_lock_all_pipes && dc->hwss.interdependent_update_lock) {
 		dc->hwss.interdependent_update_lock(dc, context, false);
 	} else {
-		dc->hwss.pipe_control_lock(dc, top_pipe_to_program, false);
+		hwss_pipe_control_lock(dc, top_pipe_to_program, false);
 	}
 
 	if ((update_type != UPDATE_TYPE_FAST) && stream->update_flags.bits.dsc_changed)

@@ -420,6 +420,9 @@ static int ih_v7_0_irq_init(struct amdgpu_device *adev)
 	if (adev->irq.ih_soft.ring_size)
 		adev->irq.ih_soft.enabled = true;
 
+	if (adev->irq.ih_psp.ring_size)
+		adev->irq.ih_psp.enabled = true;
+
 	return 0;
 }
 
@@ -627,6 +630,10 @@ static int ih_v7_0_sw_init(struct amdgpu_ip_block *ip_block)
 	if (r)
 		return r;
 
+	r = amdgpu_ih_ring_init(adev, &adev->irq.ih_psp, IH_PSP_RING_SIZE, true);
+	if (r)
+		return r;
+
 	r = amdgpu_irq_init(adev);
 
 	return r;
@@ -655,7 +662,11 @@ static int ih_v7_0_hw_init(struct amdgpu_ip_block *ip_block)
 
 static int ih_v7_0_hw_fini(struct amdgpu_ip_block *ip_block)
 {
-	ih_v7_0_irq_disable(ip_block->adev);
+	struct amdgpu_device *adev = ip_block->adev;
+
+	ih_v7_0_irq_disable(adev);
+
+	cancel_work_sync(&adev->irq.ih_psp_work);
 
 	return 0;
 }
@@ -668,12 +679,6 @@ static int ih_v7_0_suspend(struct amdgpu_ip_block *ip_block)
 static int ih_v7_0_resume(struct amdgpu_ip_block *ip_block)
 {
 	return ih_v7_0_hw_init(ip_block);
-}
-
-static bool ih_v7_0_is_idle(struct amdgpu_ip_block *ip_block)
-{
-	/* todo */
-	return true;
 }
 
 static int ih_v7_0_wait_for_idle(struct amdgpu_ip_block *ip_block)
@@ -844,7 +849,6 @@ static const struct amd_ip_funcs ih_v7_0_ip_funcs = {
 	.hw_fini = ih_v7_0_hw_fini,
 	.suspend = ih_v7_0_suspend,
 	.resume = ih_v7_0_resume,
-	.is_idle = ih_v7_0_is_idle,
 	.wait_for_idle = ih_v7_0_wait_for_idle,
 	.soft_reset = ih_v7_0_soft_reset,
 	.set_clockgating_state = ih_v7_0_set_clockgating_state,

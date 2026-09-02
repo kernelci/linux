@@ -31,6 +31,7 @@ static void dml21_populate_pmo_options(struct dml2_pmo_options *pmo_options,
 			disable_fams2;
 	pmo_options->disable_drr_var = ((in_dc->debug.dml21_disable_pstate_method_mask >> 4) & 1) ||
 			disable_fams2;
+	pmo_options->disable_alternate_memory_training = ((in_dc->debug.dml21_disable_pstate_method_mask >> 5) & 1);
 	pmo_options->disable_fams2 = disable_fams2;
 
 	pmo_options->disable_drr_var_when_var_active = in_dc->debug.disable_fams_gaming == INGAME_FAMS_DISABLE ||
@@ -92,6 +93,32 @@ static unsigned int calc_max_hardware_v_total(const struct dc_stream_state *stre
 	}
 
 	return max_hw_v_total;
+}
+
+static unsigned int calc_vblank_nom_lines(const struct dc_stream_state *stream, const unsigned int default_vblank_nom_us)
+{
+	unsigned int vblank_avail = stream->timing.v_total - stream->timing.v_addressable;
+	unsigned int vblank_nom = (unsigned int)div64_u64((uint64_t)default_vblank_nom_us * 1000ULL, // vblank_nom_ns
+			div64_u64((uint64_t)stream->timing.h_total * 10000000ULL, (uint64_t)stream->timing.pix_clk_100hz)); // line_time_ns
+
+	/*
+	 * HW requirement for SDP to be in FP ahead of vsync (line 0).
+	 * TODO: Move this out of the translation layer into DC core as per-ASIC policy.
+	 */
+	if (stream->adaptive_sync_infopacket.valid ||
+			(stream->link && stream->link->replay_settings.config.replay_supported)) {
+		const unsigned int v_active = stream->timing.v_border_top + stream->timing.v_addressable +
+					      stream->timing.v_border_bottom;
+		const unsigned int blank_lines = stream->timing.v_total - v_active;
+		const unsigned int bp_lines = blank_lines - stream->timing.v_front_porch;
+		const unsigned int min_vblank_nom = bp_lines + 2;
+
+		vblank_nom = max(vblank_nom, min_vblank_nom);
+	}
+
+	vblank_nom = min(vblank_nom, vblank_avail);
+
+	return vblank_nom;
 }
 
 static void populate_dml21_timing_config_from_stream_state(struct dml2_timing_cfg *timing,
@@ -199,7 +226,7 @@ static void populate_dml21_timing_config_from_stream_state(struct dml2_timing_cf
 		break;
 	}
 
-	timing->vblank_nom = timing->v_total - timing->v_active;
+	timing->vblank_nom = calc_vblank_nom_lines(stream, dml_ctx->v21.dml_init.ip_caps.vblank_nom_default_us);
 }
 
 static void populate_dml21_output_config_from_stream_state(struct dml2_link_output_cfg *output,
@@ -999,7 +1026,7 @@ void dml21_copy_clocks_to_dc_state(struct dml2_context *in_ctx, struct dc_state 
 	context->bw_ctx.bw.dcn.clk.stutter_efficiency.low_power_efficiency = (uint8_t)in_ctx->v21.mode_programming.programming->stutter.low_power_percent_efficiency;
 	context->bw_ctx.bw.dcn.clk.stutter_efficiency.z8_stutter_efficiency = (uint8_t)in_ctx->v21.mode_programming.programming->informative.power_management.z8.stutter_efficiency;
 	context->bw_ctx.bw.dcn.clk.stutter_efficiency.z8_stutter_period = (int)in_ctx->v21.mode_programming.programming->informative.power_management.z8.stutter_period;
-	context->bw_ctx.bw.dcn.clk.zstate_support = in_ctx->v21.mode_programming.programming->z8_stutter.supported_in_blank; /*ignore meets_eco since it is not used*/
+	context->bw_ctx.bw.dcn.clk.zstate_support = in_ctx->v21.mode_programming.programming->z8_stutter.global_support;
 }
 
 static struct dml2_dchub_watermark_regs *wm_set_index_to_dc_wm_set(union dcn_watermark_set *watermarks, const enum dml2_dchub_watermark_reg_set_index wm_index)
@@ -1142,4 +1169,3 @@ void dml21_init_min_clocks_for_dc_state(struct dml2_context *in_ctx, struct dc_s
 	min_clocks->stutter_efficiency.z8_stutter_period = 100000;
 	min_clocks->zstate_support = DCN_ZSTATE_SUPPORT_ALLOW;
 }
-

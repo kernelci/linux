@@ -56,6 +56,7 @@
 #include "amdgpu_amdkfd.h"
 #include "amdgpu_sdma.h"
 #include "amdgpu_ras.h"
+#include "amdgpu_ras_mgr.h"
 #include "amdgpu_hmm.h"
 #include "amdgpu_atomfirmware.h"
 #include "amdgpu_res_cursor.h"
@@ -200,7 +201,8 @@ static int amdgpu_ttm_map_buffer(struct amdgpu_ttm_buffer_entity *entity,
 				 struct ttm_resource *mem,
 				 struct amdgpu_res_cursor *mm_cur,
 				 unsigned int window,
-				 bool tmz, uint64_t *size, uint64_t *addr)
+				 bool tmz, uint64_t *size, uint64_t *addr,
+				 bool readonly)
 {
 	struct amdgpu_device *adev = amdgpu_ttm_adev(bo->bdev);
 	unsigned int offset, num_pages, num_dw, num_bytes;
@@ -262,6 +264,8 @@ static int amdgpu_ttm_map_buffer(struct amdgpu_ttm_buffer_entity *entity,
 	flags = amdgpu_ttm_tt_pte_flags(adev, bo->ttm, mem);
 	if (tmz)
 		flags |= AMDGPU_PTE_TMZ;
+	if (readonly)
+		flags &= ~AMDGPU_PTE_WRITEABLE;
 
 	cpu_addr = &job->ibs[0].ptr[num_dw];
 
@@ -331,12 +335,12 @@ static int amdgpu_ttm_copy_mem_to_mem(struct amdgpu_device *adev,
 
 		/* Map src to window 0 and dst to window 1. */
 		r = amdgpu_ttm_map_buffer(entity, src->bo, src->mem, &src_mm,
-					  0, tmz, &cur_size, &from);
+					  0, tmz, &cur_size, &from, true);
 		if (r)
 			goto error;
 
 		r = amdgpu_ttm_map_buffer(entity, dst->bo, dst->mem, &dst_mm,
-					  1, tmz, &cur_size, &to);
+					  1, tmz, &cur_size, &to, false);
 		if (r)
 			goto error;
 
@@ -1733,7 +1737,7 @@ void amdgpu_ttm_init_vram_resv(struct amdgpu_device *adev,
 
 static void amdgpu_ttm_init_fw_resv_region(struct amdgpu_device *adev)
 {
-	uint32_t reserve_size = 0;
+	u64 reserve_size = 0, offset = 0;
 
 	if (!adev->discovery.reserve_tmr)
 		return;
@@ -1745,24 +1749,28 @@ static void amdgpu_ttm_init_fw_resv_region(struct amdgpu_device *adev)
 	 * Otherwise, fallback to legacy approach to check and reserve tmr block for ip
 	 * discovery data and G6 memory training data respectively
 	 */
-	if (adev->bios)
+	if (adev->bios) {
 		reserve_size =
 			amdgpu_atomfirmware_get_fw_reserved_fb_size(adev);
+		if (reserve_size)
+			offset = adev->gmc.real_vram_size - reserve_size;
+	}
 
 	if (!adev->bios &&
 	    (amdgpu_ip_version(adev, GC_HWIP, 0) == IP_VERSION(9, 4, 3) ||
 	     amdgpu_ip_version(adev, GC_HWIP, 0) == IP_VERSION(9, 4, 4) ||
-	     amdgpu_ip_version(adev, GC_HWIP, 0) == IP_VERSION(9, 5, 0)))
-		reserve_size = max(reserve_size, (uint32_t)280 << 20);
-	else if (!adev->bios &&
-		 amdgpu_ip_version(adev, GC_HWIP, 0) == IP_VERSION(12, 1, 0)) {
-		reserve_size = max(reserve_size, (uint32_t)150 << 20);
-	} else if (!reserve_size)
+	     amdgpu_ip_version(adev, GC_HWIP, 0) == IP_VERSION(9, 5, 0))) {
+		reserve_size = (u64)280 << 20;
+		offset = adev->gmc.real_vram_size - reserve_size;
+	} else if (adev->asic_funcs && adev->asic_funcs->get_fw_reserved_info) {
+		dev_dbg(adev->dev, "Querying FW reserved region info through get_fw_reserved_info\n");
+		adev->asic_funcs->get_fw_reserved_info(adev, &reserve_size, &offset);
+	} else if (!reserve_size) {
 		reserve_size = DISCOVERY_TMR_OFFSET;
-
+		offset = adev->gmc.real_vram_size - reserve_size;
+	}
 	amdgpu_ttm_init_vram_resv(adev, AMDGPU_RESV_FW,
-				  adev->gmc.real_vram_size - reserve_size,
-				  reserve_size, false);
+				offset,	reserve_size, false);
 }
 
 static void amdgpu_ttm_init_mem_train_resv_region(struct amdgpu_device *adev)
@@ -2160,6 +2168,9 @@ int amdgpu_ttm_init(struct amdgpu_device *adev)
 	r = amdgpu_ttm_alloc_vram_resv_regions(adev);
 	if (r)
 		return r;
+
+	/* RAS loads and reserves bad pages */
+	amdgpu_ras_mgr_early_init_service(adev);
 
 	if (adev->mman.resv_region[AMDGPU_RESV_MEM_TRAIN].size) {
 		struct psp_memory_training_context *ctx =
@@ -2646,7 +2657,7 @@ int amdgpu_ttm_clear_buffer(struct amdgpu_ttm_buffer_entity *entity,
 		cur_size = min(dst.size, 256ULL << 20);
 
 		r = amdgpu_ttm_map_buffer(entity, &bo->tbo, bo->tbo.resource, &dst,
-					  0, false, &cur_size, &to);
+					  0, false, &cur_size, &to, false);
 		if (r)
 			goto error;
 
