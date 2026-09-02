@@ -2435,9 +2435,9 @@ int xe_oa_add_config_ioctl(struct drm_device *dev, u64 data, struct drm_file *fi
 
 	oa_config->id = idr_alloc(&oa->metrics_idr, oa_config, 1, 0, GFP_KERNEL);
 	if (oa_config->id < 0) {
-		drm_dbg(&oa->xe->drm, "Failed to create sysfs entry for OA config\n");
+		drm_dbg(&oa->xe->drm, "Failed to allocate id for OA config\n");
 		err = oa_config->id;
-		goto sysfs_err;
+		goto id_alloc_err;
 	}
 
 	id = oa_config->id;
@@ -2448,6 +2448,8 @@ int xe_oa_add_config_ioctl(struct drm_device *dev, u64 data, struct drm_file *fi
 
 	return id;
 
+id_alloc_err:
+	sysfs_remove_group(oa->metrics_kobj, &oa_config->sysfs_metric);
 sysfs_err:
 	mutex_unlock(&oa->metrics_lock);
 reg_err:
@@ -2581,10 +2583,11 @@ static u32 __hwe_oam_unit(struct xe_hw_engine *hwe)
 		return XE_OA_UNIT_INVALID;
 	else if (!IS_DGFX(gt_to_xe(hwe->gt)))
 		return XE_OAM_UNIT_SCMI_0;
-	else if (hwe->class == XE_ENGINE_CLASS_VIDEO_DECODE)
-		return (hwe->instance / 2 & 0x1) + 1;
-	else if (hwe->class == XE_ENGINE_CLASS_VIDEO_ENHANCE)
+	else if (hwe->class == XE_ENGINE_CLASS_VIDEO_ENHANCE &&
+		 MEDIA_VERx100(gt_to_xe(hwe->gt)) < 3500)
 		return (hwe->instance & 0x1) + 1;
+	else
+		return (hwe->instance / 2 & 0x1) + 1;
 
 	return XE_OA_UNIT_INVALID;
 }
