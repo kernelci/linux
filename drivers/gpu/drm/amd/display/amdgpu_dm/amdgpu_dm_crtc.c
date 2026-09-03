@@ -463,7 +463,7 @@ STATIC_IFN_KUNIT struct drm_crtc_state *amdgpu_dm_crtc_duplicate_state(struct dr
 }
 EXPORT_IF_KUNIT(amdgpu_dm_crtc_duplicate_state);
 
-static void amdgpu_dm_crtc_destroy(struct drm_crtc *crtc)
+STATIC_IFN_KUNIT void amdgpu_dm_crtc_destroy(struct drm_crtc *crtc)
 {
 	/*
 	 * amdgpu_dm_ism_fini() is intentionally called in amdgpu_dm_fini().
@@ -474,6 +474,7 @@ static void amdgpu_dm_crtc_destroy(struct drm_crtc *crtc)
 	drm_crtc_cleanup(crtc);
 	kfree(crtc);
 }
+EXPORT_IF_KUNIT(amdgpu_dm_crtc_destroy);
 
 STATIC_IFN_KUNIT void amdgpu_dm_crtc_reset_state(struct drm_crtc *crtc)
 {
@@ -491,12 +492,13 @@ STATIC_IFN_KUNIT void amdgpu_dm_crtc_reset_state(struct drm_crtc *crtc)
 EXPORT_IF_KUNIT(amdgpu_dm_crtc_reset_state);
 
 #ifdef CONFIG_DEBUG_FS
-static int amdgpu_dm_crtc_late_register(struct drm_crtc *crtc)
+STATIC_IFN_KUNIT int amdgpu_dm_crtc_late_register(struct drm_crtc *crtc)
 {
 	crtc_debugfs_init(crtc);
 
 	return 0;
 }
+EXPORT_IF_KUNIT(amdgpu_dm_crtc_late_register);
 #endif
 
 #ifdef AMD_PRIVATE_COLOR
@@ -648,7 +650,7 @@ STATIC_IFN_KUNIT bool amdgpu_dm_crtc_helper_mode_fixup(struct drm_crtc *crtc,
 }
 EXPORT_IF_KUNIT(amdgpu_dm_crtc_helper_mode_fixup);
 
-static int amdgpu_dm_crtc_helper_atomic_check(struct drm_crtc *crtc,
+STATIC_IFN_KUNIT int amdgpu_dm_crtc_helper_atomic_check(struct drm_crtc *crtc,
 					      struct drm_atomic_commit *state)
 {
 	struct drm_crtc_state *crtc_state = drm_atomic_get_new_crtc_state(state,
@@ -710,6 +712,7 @@ static int amdgpu_dm_crtc_helper_atomic_check(struct drm_crtc *crtc,
 	DRM_DEBUG_ATOMIC("Failed DC stream validation\n");
 	return ret;
 }
+EXPORT_IF_KUNIT(amdgpu_dm_crtc_helper_atomic_check);
 
 static const struct drm_crtc_helper_funcs amdgpu_dm_crtc_helper_funcs = {
 	.disable = amdgpu_dm_crtc_helper_disable,
@@ -820,4 +823,5 @@ fail:
 	kfree(cursor_plane);
 	return res;
 }
+EXPORT_IF_KUNIT(amdgpu_dm_crtc_init);
 

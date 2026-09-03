@@ -645,7 +645,6 @@ static int gmc_v12_0_early_init(struct amdgpu_ip_block *ip_block)
 	case IP_VERSION(12, 1, 0):
 		gmc_v12_1_set_gmc_funcs(adev);
 		gmc_v12_1_set_irq_funcs(adev);
-		adev->gmc.init_pte_flags = AMDGPU_PTE_IS_PTE;
 		break;
 	default:
 		gmc_v12_0_set_gmc_funcs(adev);
@@ -668,7 +667,7 @@ static int gmc_v12_0_early_init(struct amdgpu_ip_block *ip_block)
 		adev->gmc.private_aperture_end =
 			adev->gmc.private_aperture_start + (4ULL << 30) - 1;
 
-	adev->gmc.noretry_flags = AMDGPU_VM_NORETRY_FLAGS_TF;
+	adev->gmc.noretry_flags = AMDGPU_VM_NORETRY_FLAGS_GFX12;
 
 	return 0;
 }
@@ -845,7 +844,7 @@ static int gmc_v12_0_sw_init(struct amdgpu_ip_block *ip_block)
 	case IP_VERSION(12, 1, 0):
 		bitmap_set(adev->vmhubs_mask, AMDGPU_GFXHUB(0),
 				NUM_XCC(adev->gfx.xcc_mask));
-		for (i = 0; i < hweight32(adev->aid_mask); i++)
+		for_each_inst(i, adev->mmhub.inst_mask)
 			set_bit(AMDGPU_MMHUB0(i), adev->vmhubs_mask);
 		/*
 		 * To fulfill 5-level page support,
@@ -855,6 +854,8 @@ static int gmc_v12_0_sw_init(struct amdgpu_ip_block *ip_block)
 		amdgpu_vm_adjust_size(adev, 128 * 1024 * 1024, 9, 4, 57);
 		pte_addr_mask = 0x000FFFFFFFFFF000ULL; /* 52 bit PA */
 		dma_addr_bits = 52;
+		adev->gmc.translate_further = adev->vm_manager.num_level > 1;
+		adev->gmc.init_pte_flags = AMDGPU_PTE_IS_PTE;
 		break;
 	default:
 		dev_warn(adev->dev, "Unrecognized GC IP version: 0x%08x\n",
@@ -944,6 +945,9 @@ static int gmc_v12_0_sw_init(struct amdgpu_ip_block *ip_block)
 	if (r)
 		return r;
 
+	if (amdgpu_ip_version(adev, GC_HWIP, 0) == IP_VERSION(12, 1, 0))
+		gmc_v12_1_init_nps_details(adev);
+
 	/*
 	 * number of VMs
 	 * VMID 0 is reserved for System
@@ -961,6 +965,9 @@ static int gmc_v12_0_sw_init(struct amdgpu_ip_block *ip_block)
 	r = amdgpu_gmc_ras_sw_init(adev);
 	if (r)
 		return r;
+
+	if (amdgpu_ip_version(adev, GC_HWIP, 0) == IP_VERSION(12, 1, 0))
+		amdgpu_gmc_sysfs_init(adev);
 
 	return 0;
 }
@@ -981,11 +988,17 @@ static int gmc_v12_0_sw_fini(struct amdgpu_ip_block *ip_block)
 {
 	struct amdgpu_device *adev = ip_block->adev;
 
+	if (amdgpu_ip_version(adev, GC_HWIP, 0) == IP_VERSION(12, 1, 0))
+		amdgpu_gmc_sysfs_fini(adev);
+
 	amdgpu_vm_manager_fini(adev);
 	gmc_v12_0_gart_fini(adev);
 	amdgpu_gem_force_release(adev);
 	amdgpu_bo_free_kernel(&adev->gmc.pdb0_bo, NULL, &adev->gmc.ptr_pdb0);
 	amdgpu_bo_fini(adev);
+
+	adev->gmc.num_mem_partitions = 0;
+	kfree(adev->gmc.mem_partitions);
 
 	return 0;
 }
@@ -1105,12 +1118,6 @@ static int gmc_v12_0_resume(struct amdgpu_ip_block *ip_block)
 	return 0;
 }
 
-static bool gmc_v12_0_is_idle(struct amdgpu_ip_block *ip_block)
-{
-	/* MC is always ready in GMC v11.*/
-	return true;
-}
-
 static int gmc_v12_0_wait_for_idle(struct amdgpu_ip_block *ip_block)
 {
 	/* There is no need to wait for MC idle in GMC v11.*/
@@ -1159,7 +1166,6 @@ const struct amd_ip_funcs gmc_v12_0_ip_funcs = {
 	.hw_fini = gmc_v12_0_hw_fini,
 	.suspend = gmc_v12_0_suspend,
 	.resume = gmc_v12_0_resume,
-	.is_idle = gmc_v12_0_is_idle,
 	.wait_for_idle = gmc_v12_0_wait_for_idle,
 	.set_clockgating_state = gmc_v12_0_set_clockgating_state,
 	.set_powergating_state = gmc_v12_0_set_powergating_state,

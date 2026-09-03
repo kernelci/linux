@@ -551,10 +551,15 @@ static int sdma_v7_1_gfx_resume_instance(struct amdgpu_device *adev, int i, bool
 
 	/* Set up sdma hang watchdog */
 	temp = RREG32_SOC15_IP(GC, sdma_v7_1_get_reg_offset(adev, i, regSDMA0_SDMA_WATCHDOG_CNTL));
-	/* 100ms per unit */
-	temp = REG_SET_FIELD(temp, SDMA0_SDMA_WATCHDOG_CNTL, QUEUE_HANG_COUNT,
-			     max(adev->usec_timeout/100000, 1));
+	/* Disable sdma hang watchdog, need revist this when issue resolved.
+	Once issue resoved, the QUEUE_HANG_COUNT should be set to max(adev->usec_timeout/100000,1)
+	*/
+	temp = REG_SET_FIELD(temp, SDMA0_SDMA_WATCHDOG_CNTL, QUEUE_HANG_COUNT, 0);
+	temp = REG_SET_FIELD(temp, SDMA0_SDMA_WATCHDOG_CNTL, CMD_TIMEOUT_COUNT, 0);
 	WREG32_SOC15_IP(GC, sdma_v7_1_get_reg_offset(adev, i, regSDMA0_SDMA_WATCHDOG_CNTL), temp);
+
+	dev_dbg(adev->dev, "Disable SDMA Hang WatchDog, regSDMA0_SDMA_WATCHDOG_CNTL = %d\n",
+		RREG32_SOC15_IP(GC, sdma_v7_1_get_reg_offset(adev, i, regSDMA0_SDMA_WATCHDOG_CNTL)));
 
 	/* Set up RESP_MODE to non-copy addresses */
 	temp = RREG32_SOC15_IP(GC, sdma_v7_1_get_reg_offset(adev, i, regSDMA0_SDMA_UTCL1_CNTL));
@@ -1365,6 +1370,22 @@ static int sdma_v7_1_sw_fini(struct amdgpu_ip_block *ip_block)
 	return 0;
 }
 
+#define regSDMA0_SDMA_FE_CNTL0			0x10
+#define regSDMA0_SDMA_FE_CNTL0_BASE_IDX		0
+static void sdma_v7_1_rb_cmd_switch(struct amdgpu_device *adev,
+				    uint32_t inst_mask)
+{
+	int i, fe_cntl;
+	
+	if (adev->sdma.sdma_debug) {
+		for_each_inst(i, inst_mask) {
+			fe_cntl = RREG32_SOC15_IP(GC, sdma_v7_1_get_reg_offset(adev, i, regSDMA0_SDMA_FE_CNTL0));
+			fe_cntl &= 0x7fffffff;
+			WREG32_SOC15_IP(GC, sdma_v7_1_get_reg_offset(adev, i, regSDMA0_SDMA_FE_CNTL0), fe_cntl);
+		}
+	}
+}
+
 static int sdma_v7_1_hw_init(struct amdgpu_ip_block *ip_block)
 {
 	struct amdgpu_device *adev = ip_block->adev;
@@ -1372,6 +1393,8 @@ static int sdma_v7_1_hw_init(struct amdgpu_ip_block *ip_block)
 	int r;
 
 	inst_mask = GENMASK(adev->sdma.num_instances - 1, 0);
+
+	sdma_v7_1_rb_cmd_switch(adev, inst_mask);
 
 	r = sdma_v7_1_inst_start(adev, inst_mask);
 	if (r)
@@ -1402,21 +1425,6 @@ static int sdma_v7_1_suspend(struct amdgpu_ip_block *ip_block)
 static int sdma_v7_1_resume(struct amdgpu_ip_block *ip_block)
 {
 	return sdma_v7_1_hw_init(ip_block);
-}
-
-static bool sdma_v7_1_is_idle(struct amdgpu_ip_block *ip_block)
-{
-	struct amdgpu_device *adev = ip_block->adev;
-	u32 i;
-
-	for (i = 0; i < adev->sdma.num_instances; i++) {
-		u32 tmp = RREG32(sdma_v7_1_get_reg_offset(adev, i, regSDMA0_SDMA_STATUS_REG));
-
-		if (!(tmp & SDMA0_SDMA_STATUS_REG__IDLE_MASK))
-			return false;
-	}
-
-	return true;
 }
 
 static int sdma_v7_1_wait_for_idle(struct amdgpu_ip_block *ip_block)
@@ -1624,7 +1632,6 @@ const struct amd_ip_funcs sdma_v7_1_ip_funcs = {
 	.hw_fini = sdma_v7_1_hw_fini,
 	.suspend = sdma_v7_1_suspend,
 	.resume = sdma_v7_1_resume,
-	.is_idle = sdma_v7_1_is_idle,
 	.wait_for_idle = sdma_v7_1_wait_for_idle,
 	.soft_reset = sdma_v7_1_soft_reset,
 	.set_clockgating_state = sdma_v7_1_set_clockgating_state,
