@@ -1573,7 +1573,6 @@ static struct mpi3mr_sas_port *mpi3mr_sas_port_add(struct mpi3mr_ioc *mrioc,
 	}
 	if (tgtdev)
 		mpi3mr_tgtdev_put(tgtdev);
-	}
 	kfree(mr_sas_port);
 	return NULL;
 }
