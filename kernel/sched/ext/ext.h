@@ -24,6 +24,13 @@ bool scx_allow_proxy_exec(const struct task_struct *p);
 void scx_proxy_donor_start(struct rq *rq);
 void scx_proxy_reenqueue_retry(struct rq *rq, struct task_struct *next);
 void init_sched_ext_class(void);
+void __scx_update_idle(struct rq *rq, bool idle, bool do_notify);
+
+static inline void scx_update_idle(struct rq *rq, bool idle, bool do_notify)
+{
+	if (scx_enabled())
+		__scx_update_idle(rq, idle, do_notify);
+}
 
 static inline u32 scx_cpuperf_target(s32 cpu)
 {
@@ -62,20 +69,9 @@ static inline void scx_proxy_donor_start(struct rq *rq) {}
 static inline void scx_proxy_reenqueue_retry(struct rq *rq,
 					     struct task_struct *next) {}
 static inline void init_sched_ext_class(void) {}
+static inline void scx_update_idle(struct rq *rq, bool idle, bool do_notify) {}
 
 #endif	/* CONFIG_SCHED_CLASS_EXT */
-
-#ifdef CONFIG_SCHED_CLASS_EXT
-void __scx_update_idle(struct rq *rq, bool idle, bool do_notify);
-
-static inline void scx_update_idle(struct rq *rq, bool idle, bool do_notify)
-{
-	if (scx_enabled())
-		__scx_update_idle(rq, idle, do_notify);
-}
-#else
-static inline void scx_update_idle(struct rq *rq, bool idle, bool do_notify) {}
-#endif
 
 #ifdef CONFIG_CGROUP_SCHED
 #ifdef CONFIG_EXT_GROUP_SCHED
