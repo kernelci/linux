@@ -1840,6 +1840,48 @@ struct alc298_samsung_amp_desc {
 	unsigned short init_seq[2][2];
 };
 
+/*
+ * The MSI GE66 Raider 11UE drives its speakers through a Realtek ALC1316 smart
+ * amplifier, reached over the ALC298 coefficient tunnel. Left unconfigured the
+ * amplifier's silence detection mutes the speaker path after about 0.2 s of
+ * quiet and takes about 0.4 s to reopen, so the start of every sound that
+ * follows a pause is lost. Headphones do not pass through the amplifier and are
+ * unaffected.
+ *
+ * Tunnel layout for ALC286/ALC298: coefficient 0x22 selects the amplifier, 0x23
+ * carries the 16-bit register, 0x24 and 0x25 the value's high and low halves,
+ * and 0x26 commits. Bit 4 of the commit word is a self-clearing go bit.
+ */
+static void alc298_fixup_alc1316_amp(struct hda_codec *codec,
+				     const struct hda_fixup *fix, int action)
+{
+	static const unsigned short init_seq[][2] = {
+		{ 0x0000, 0x01 }, { 0xc001, 0x14 }, { 0xc003, 0x00 }, { 0xc004, 0x11 },
+		{ 0xc005, 0x00 }, { 0xc006, 0x00 }, { 0xc007, 0x11 }, { 0xc008, 0x11 },
+		{ 0xc009, 0x00 }, { 0xc730, 0x06 }, { 0xc612, 0x16 }, { 0xc00f, 0xf7 },
+		{ 0xc00a, 0xd8 }, { 0xc00b, 0xb7 }, { 0xc60b, 0xff }, { 0xc60c, 0x37 },
+		{ 0xc605, 0xf0 }, { 0xc020, 0x00 }, { 0xc022, 0xd6 }, { 0xc023, 0x00 },
+		{ 0xc025, 0xd6 }, { 0xc602, 0x07 }, { 0xc603, 0x07 }, { 0xd101, 0x00 },
+		{ 0xc093, 0x80 }, { 0xc090, 0x87 }, { 0xc091, 0x11 }, { 0xc614, 0x20 },
+		{ 0xc615, 0x0a }, { 0xc616, 0x02 }, { 0xc617, 0x00 }, { 0xc050, 0x80 },
+		{ 0xc051, 0x7f }, { 0xc052, 0x00 }, { 0xc053, 0x70 }, { 0xc054, 0x00 },
+		{ 0xc0a2, 0x01 }, { 0xc09d, 0x80 }, { 0xc09c, 0x71 }
+	};
+	int i;
+
+	if (action != HDA_FIXUP_ACT_INIT)
+		return;
+
+	alc_write_coef_idx(codec, 0x22, 0x0010);
+
+	for (i = 0; i < ARRAY_SIZE(init_seq); i++) {
+		alc_write_coef_idx(codec, 0x23, init_seq[i][0]);
+		alc_write_coef_idx(codec, 0x24, 0x0000);
+		alc_write_coef_idx(codec, 0x25, init_seq[i][1]);
+		alc_write_coef_idx(codec, 0x26, 0xb031);
+	}
+}
+
 static void alc298_fixup_samsung_amp(struct hda_codec *codec,
 				     const struct hda_fixup *fix, int action)
 {
@@ -2721,6 +2763,17 @@ static void alc294_fixup_bass_speaker_15(struct hda_codec *codec,
 	}
 }
 
+/* route Speaker (0x1b) to DAC 0x02, the only DAC reachable from Bass Speaker (0x14) */
+static void alc256_fixup_honor_dra_xx_share_dac(struct hda_codec *codec,
+						const struct hda_fixup *fix, int action)
+{
+	if (action == HDA_FIXUP_ACT_PRE_PROBE) {
+		static const hda_nid_t conn[] = { 0x02 };
+
+		snd_hda_override_conn_list(codec, 0x1b, ARRAY_SIZE(conn), conn);
+	}
+}
+
 /* Hook to update amp GPIO4 for automute */
 static void alc280_hp_gpio4_automute_hook(struct hda_codec *codec,
 					  struct hda_jack_callback *jack)
@@ -3537,6 +3590,27 @@ static void alc233_fixup_no_audio_jack(struct hda_codec *codec,
 	alc_process_coef_fw(codec, alc233_fixup_no_audio_jack_coefs);
 }
 
+static const struct coef_fw alc256_asus_speaker_coefs[] = {
+	WRITE_COEF(0x10, 0x7f20), WRITE_COEF(0x16, 0x0c50), WRITE_COEF(0x35, 0x8d6a),
+	WRITE_COEF(0x37, 0xfe06), WRITE_COEF(0x57, 0x7f7f),
+	{}
+};
+
+static void alc256_fixup_asus_speaker_coefs(struct hda_codec *codec,
+					    const struct hda_fixup *fix,
+					    int action)
+{
+	/*
+	 * The internal speakers of the ASUS ExpertBook PM3606CHA stay silent
+	 * with the default COEF values. These are the values set by the
+	 * Windows driver. They are applied on every init so that they are
+	 * restored after resume, too.
+	 */
+	if (action != HDA_FIXUP_ACT_INIT)
+		return;
+	alc_process_coef_fw(codec, alc256_asus_speaker_coefs);
+}
+
 static void alc256_fixup_mic_no_presence_and_resume(struct hda_codec *codec,
 						    const struct hda_fixup *fix,
 						    int action)
@@ -4241,6 +4315,7 @@ enum {
 	ALC236_FIXUP_HP_15_FD0XXX,
 	ALC236_FIXUP_LENOVO_INV_DMIC,
 	ALC298_FIXUP_SAMSUNG_AMP,
+	ALC298_FIXUP_MSI_GE66_ALC1316_AMP,
 	ALC298_FIXUP_SAMSUNG_AMP_V2_2_AMPS,
 	ALC298_FIXUP_SAMSUNG_AMP_V2_4_AMPS,
 	ALC298_FIXUP_LG_GRAM_STYLE_14,
@@ -4377,6 +4452,8 @@ enum {
 	ALC245_FIXUP_CS35L41_I2C_2_MUTE_LED,
 	ALC236_FIXUP_HP_DMIC,
 	ALC256_FIXUP_HONOR_MRB_XXX_M1020_AUDIO,
+	ALC256_FIXUP_HONOR_DRA_XX_SPEAKERS,
+	ALC256_FIXUP_HONOR_DRA_XX_SHARE_DAC,
 	ALC245_FIXUP_HP_ENVY_X360_15_FH0XXX,
 	ALC287_FIXUP_ACER_MICMUTE_LED,
 	ALC236_FIXUP_DELL_HP_POP_NOISE,
@@ -4388,6 +4465,8 @@ enum {
 	ALC285_LENOVO_DAC_RENAME,
 	ALC287_FIXUP_YOGA9_SPEAKER2_TO_DAC1,
 	ALC256_FIXUP_IPASON_SMARTBOOK_S1,
+	ALC256_FIXUP_ASUS_SPEAKER_COEFS,
+	ALC245_FIXUP_MINISFORUM_V3_MIC_NO_PRESENCE,
 };
 
 /* A special fixup for Lenovo C940 and Yoga Duet 7;
@@ -6055,6 +6134,10 @@ static const struct hda_fixup alc269_fixups[] = {
 		.type = HDA_FIXUP_FUNC,
 		.v.func = alc295_fixup_hp_pavilion_mute_led_1b,
 	},
+	[ALC298_FIXUP_MSI_GE66_ALC1316_AMP] = {
+		.type = HDA_FIXUP_FUNC,
+		.v.func = alc298_fixup_alc1316_amp,
+	},
 	[ALC298_FIXUP_SAMSUNG_AMP] = {
 		.type = HDA_FIXUP_FUNC,
 		.v.func = alc298_fixup_samsung_amp,
@@ -7101,6 +7184,19 @@ static const struct hda_fixup alc269_fixups[] = {
 			{ }
 		}
 	},
+	[ALC256_FIXUP_HONOR_DRA_XX_SPEAKERS] = {
+		.type = HDA_FIXUP_PINS,
+		.v.pins = (const struct hda_pintbl[]) {
+			{ 0x14, 0x90170111 }, /* bass speakers */
+			{ }
+		},
+		.chained = true,
+		.chain_id = ALC256_FIXUP_HONOR_DRA_XX_SHARE_DAC
+	},
+	[ALC256_FIXUP_HONOR_DRA_XX_SHARE_DAC] = {
+		.type = HDA_FIXUP_FUNC,
+		.v.func = alc256_fixup_honor_dra_xx_share_dac,
+	},
 	[ALC245_FIXUP_HP_ENVY_X360_15_FH0XXX] = {
 		.type = HDA_FIXUP_FUNC,
 		.v.func = cs35l41_fixup_i2c_two,
@@ -7173,6 +7269,21 @@ static const struct hda_fixup alc269_fixups[] = {
 			{ 0x1b, 0x90170110 },	/* the real internal speaker */
 			{ }
 		},
+	},
+	[ALC256_FIXUP_ASUS_SPEAKER_COEFS] = {
+		.type = HDA_FIXUP_FUNC,
+		.v.func = alc256_fixup_asus_speaker_coefs,
+		.chained = true,
+		.chain_id = ALC256_FIXUP_ASUS_MIC_NO_PRESENCE,
+	},
+	[ALC245_FIXUP_MINISFORUM_V3_MIC_NO_PRESENCE] = {
+		.type = HDA_FIXUP_PINS,
+		.v.pins = (const struct hda_pintbl[]) {
+			{ 0x19, 0x04a19150 }, /* headset mic jack, no presence detect */
+			{ }
+		},
+		.chained = true,
+		.chain_id = ALC245_FIXUP_BASS_HP_DAC
 	},
 };
 
@@ -7947,6 +8058,7 @@ static const struct hda_quirk alc269_fixup_tbl[] = {
 	SND_PCI_QUIRK(0x1043, 0x31e1, "ASUS B5605CCA", ALC294_FIXUP_ASUS_CS35L41_SPI_2),
 	SND_PCI_QUIRK(0x1043, 0x31f1, "ASUS B3605CCA", ALC294_FIXUP_ASUS_CS35L41_SPI_2),
 	SND_PCI_QUIRK(0x1043, 0x3391, "ASUS PM3606CKA", ALC287_FIXUP_CS35L41_I2C_2),
+	SND_PCI_QUIRK(0x1043, 0x3501, "ASUS PM3606CHA", ALC256_FIXUP_ASUS_SPEAKER_COEFS),
 	SND_PCI_QUIRK(0x1043, 0x3601, "ASUS PM5406CGA", ALC287_FIXUP_CS35L41_I2C_2),
 	SND_PCI_QUIRK(0x1043, 0x3611, "ASUS PM5606CGA", ALC287_FIXUP_CS35L41_I2C_2),
 	SND_PCI_QUIRK(0x1043, 0x3701, "ASUS P5406CCA", ALC245_FIXUP_CS35L41_SPI_2),
@@ -8028,6 +8140,8 @@ static const struct hda_quirk alc269_fixup_tbl[] = {
 	SND_PCI_QUIRK(0x144d, 0xc1cc, "Samsung Galaxy Book3 Ultra (NT960XFH)", ALC298_FIXUP_SAMSUNG_AMP_V2_4_AMPS),
 	SND_PCI_QUIRK(0x1458, 0x900e, "Gigabyte G5 KF5 (2023)", ALC2XX_FIXUP_HEADSET_MIC),
 	SND_PCI_QUIRK(0x1458, 0xfa53, "Gigabyte BXBT-2807", ALC283_FIXUP_HEADSET_MIC),
+	SND_PCI_QUIRK(0x1462, 0x12fb, "MSI GE66 Raider 11UE",
+		      ALC298_FIXUP_MSI_GE66_ALC1316_AMP),
 	SND_PCI_QUIRK(0x1462, 0xb120, "MSI Cubi MS-B120", ALC283_FIXUP_HEADSET_MIC),
 	SND_PCI_QUIRK(0x1462, 0xb171, "Cubi N 8GL (MS-B171)", ALC283_FIXUP_HEADSET_MIC),
 	SND_PCI_QUIRK(0x152d, 0x1082, "Quanta NL3", ALC269_FIXUP_LIFEBOOK),
@@ -8396,11 +8510,13 @@ static const struct hda_quirk alc269_fixup_tbl[] = {
 	SND_PCI_QUIRK(0x1e50, 0x7007, "Positivo DN50E", ALC269_FIXUP_LIMIT_INT_MIC_BOOST),
 	SND_PCI_QUIRK(0x1e50, 0x7036, "Acer Gadget E10 ETBook", ALC233_FIXUP_WUJIE_SPEAKERS),
 	SND_PCI_QUIRK(0x1e50, 0x7038, "Positivo DN140", ALC269_FIXUP_LIMIT_INT_MIC_BOOST),
+	SND_PCI_QUIRK(0x1ee7, 0x204e, "HONOR DRA-XX M1020", ALC256_FIXUP_HONOR_DRA_XX_SPEAKERS),
 	SND_PCI_QUIRK(0x1ee7, 0x2078, "HONOR BRB-X M1010", ALC2XX_FIXUP_HEADSET_MIC),
 	SND_PCI_QUIRK(0x1ee7, 0x2081, "HONOR MRB-XXX M1020", ALC256_FIXUP_HONOR_MRB_XXX_M1020_AUDIO),
 	SND_PCI_QUIRK(0x1f4c, 0xb020, "Minisforum AI X1 Pro",
 		      ALC245_FIXUP_MINISFORUM_JACK_DETECT),
-	SND_PCI_QUIRK(0x1f4c, 0xe001, "Minisforum V3 (SE)", ALC245_FIXUP_BASS_HP_DAC),
+	SND_PCI_QUIRK(0x1f4c, 0xe001, "Minisforum V3 (SE)",
+		      ALC245_FIXUP_MINISFORUM_V3_MIC_NO_PRESENCE),
 	SND_PCI_QUIRK(0x1f66, 0x0105, "Ayaneo Portable Game Player", ALC287_FIXUP_CS35L41_I2C_2),
 	SND_PCI_QUIRK(0x2014, 0x800a, "Positivo ARN50", ALC269_FIXUP_LIMIT_INT_MIC_BOOST),
 	SND_PCI_QUIRK(0x2039, 0x0001, "Inspur S14-G1", ALC295_FIXUP_CHROME_BOOK),
@@ -8612,6 +8728,7 @@ static const struct hda_model_fixup alc269_fixup_models[] = {
 	{.id = ALC298_FIXUP_HUAWEI_MBX_STEREO, .name = "huawei-mbx-stereo"},
 	{.id = ALC256_FIXUP_MEDION_HEADSET_NO_PRESENCE, .name = "alc256-medion-headset"},
 	{.id = ALC298_FIXUP_SAMSUNG_AMP, .name = "alc298-samsung-amp"},
+	{.id = ALC298_FIXUP_MSI_GE66_ALC1316_AMP, .name = "alc298-alc1316-amp"},
 	{.id = ALC298_FIXUP_SAMSUNG_AMP_V2_2_AMPS, .name = "alc298-samsung-amp-v2-2-amps"},
 	{.id = ALC298_FIXUP_SAMSUNG_AMP_V2_4_AMPS, .name = "alc298-samsung-amp-v2-4-amps"},
 	{.id = ALC256_FIXUP_SAMSUNG_HEADPHONE_VERY_QUIET, .name = "alc256-samsung-headphone"},
