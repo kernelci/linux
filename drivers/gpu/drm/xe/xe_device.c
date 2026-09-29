@@ -27,6 +27,7 @@
 #include "xe_bo_evict.h"
 #include "xe_configfs.h"
 #include "xe_debugfs.h"
+#include "xe_cpu_bind.h"
 #include "xe_defaults.h"
 #include "xe_devcoredump.h"
 #include "xe_device_sysfs.h"
@@ -990,6 +991,10 @@ int xe_device_probe(struct xe_device *xe)
 	}
 
 	err = xe_vram_memtest(xe);
+	if (err)
+		return err;
+
+	err = xe_cpu_bind_init(xe);
 	if (err)
 		return err;
 
