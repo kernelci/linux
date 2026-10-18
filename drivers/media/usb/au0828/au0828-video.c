@@ -530,7 +530,7 @@ static inline int au0828_isoc_copy(struct au0828_dev *dev, struct urb *urb)
 				continue;
 		}
 
-		if (urb->iso_frame_desc[i].actual_length <= 0)
+		if (urb->iso_frame_desc[i].actual_length < 5)
 			continue;
 
 		if (urb->iso_frame_desc[i].actual_length >
