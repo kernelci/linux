@@ -963,3 +963,33 @@ void intel_pfit_get_config(struct intel_crtc_state *crtc_state)
 			ilk_pfit_get_config(crtc_state);
 	}
 }
+
+bool i9xx_pfit_is_one_line_mode(const struct intel_crtc_state *crtc_state)
+{
+	return crtc_state->gmch_pfit.control & PFIT_ENABLE &&
+		drm_rect_width(&crtc_state->pipe_src) > 1024;
+}
+
+u32 i9xx_pfit_vscale_ratio(struct intel_display *display)
+{
+	/* XXX: This is not the same logic as in the xorg driver, but more in
+	 * line with the intel documentation for the i965
+	 *
+	 * FIXME don't read this from the hardware but use a computed value
+	 */
+	if (DISPLAY_VER(display) >= 4) {
+		u32 tmp = intel_de_read(display, PFIT_PGM_RATIOS(display));
+
+		/* on i965 use the PGM reg to read out the autoscaler values */
+		return REG_FIELD_GET(PFIT_VERT_SCALE_MASK_965, tmp);
+	} else {
+		u32 tmp;
+
+		if (intel_de_read(display, PFIT_CONTROL(display)) & PFIT_VERT_AUTO_SCALE)
+			tmp = intel_de_read(display, PFIT_AUTO_RATIOS(display));
+		else
+			tmp = intel_de_read(display, PFIT_PGM_RATIOS(display));
+
+		return REG_FIELD_GET(PFIT_VERT_SCALE_MASK, tmp);
+	}
+}
