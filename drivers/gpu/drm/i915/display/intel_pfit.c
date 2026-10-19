@@ -532,6 +532,27 @@ static void i9xx_scale_fullscreen(struct intel_crtc_state *crtc_state,
 	i9xx_compute_pfit_dst(crtc_state, hscale, vscale);
 }
 
+static int i9xx_pfit_check_src_size(const struct intel_crtc_state *crtc_state)
+{
+	struct intel_display *display = to_intel_display(crtc_state);
+	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	int pipe_src_w = drm_rect_width(&crtc_state->pipe_src);
+	int max_src_w;
+
+	/* Not sure there is any vertical limit */
+	max_src_w = 2048;
+
+	if (pipe_src_w > max_src_w) {
+		drm_dbg_kms(display->drm,
+			    "[CRTC:%d:%s] source width %d exceeds pfit max %d\n",
+			    crtc->base.base.id, crtc->base.name,
+			    pipe_src_w, max_src_w);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int i9xx_pfit_check_scaling(const struct intel_crtc_state *crtc_state)
 {
 	struct intel_display *display = to_intel_display(crtc_state);
@@ -677,6 +698,10 @@ out:
 
 	if ((pfit_control & PFIT_ENABLE) == 0)
 		return 0;
+
+	ret = i9xx_pfit_check_src_size(crtc_state);
+	if (ret)
+		return ret;
 
 	ret = i9xx_pfit_check_scaling(crtc_state);
 	if (ret)
