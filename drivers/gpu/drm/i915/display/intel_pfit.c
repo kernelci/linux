@@ -350,15 +350,7 @@ centre_vertically(struct drm_display_mode *adjusted_mode,
 
 static u32 panel_fitter_scaling(u32 source, u32 target)
 {
-	/*
-	 * Floating point operation is not supported. So the FACTOR
-	 * is defined, which can avoid the floating point computation
-	 * when calculating the panel ratio.
-	 */
-#define ACCURACY 12
-#define FACTOR (1 << ACCURACY)
-	u32 ratio = source * FACTOR / target;
-	return (FACTOR * ratio + FACTOR/2) / FACTOR;
+	return DIV_ROUND_CLOSEST(source << 12, target);
 }
 
 static void i965_scale_aspect(struct intel_crtc_state *crtc_state,
