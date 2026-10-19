@@ -2296,7 +2296,8 @@ static bool intel_crtc_supports_double_wide(const struct intel_crtc *crtc)
 		(crtc->pipe == PIPE_A || display->platform.i915g);
 }
 
-static u32 ilk_pipe_pixel_rate(const struct intel_crtc_state *crtc_state)
+static unsigned int
+intel_pipe_pixel_rate(const struct intel_crtc_state *crtc_state)
 {
 	u32 pixel_rate = crtc_state->hw.pipe_mode.crtc_clock;
 	struct drm_rect src;
@@ -2317,7 +2318,8 @@ static u32 ilk_pipe_pixel_rate(const struct intel_crtc_state *crtc_state)
 				   pixel_rate);
 }
 
-static u32 ilk_pipe_pixel_rate_cdclk(const struct intel_crtc_state *crtc_state)
+static unsigned int
+intel_pipe_pixel_rate_cdclk(const struct intel_crtc_state *crtc_state)
 {
 	struct intel_display *display = to_intel_display(crtc_state);
 	u32 pixel_rate = crtc_state->hw.pipe_mode.crtc_clock;
@@ -2363,19 +2365,10 @@ static void intel_mode_from_crtc_timings(struct drm_display_mode *mode,
 
 static void intel_crtc_compute_pixel_rate(struct intel_crtc_state *crtc_state)
 {
-	struct intel_display *display = to_intel_display(crtc_state);
-
-	if (HAS_GMCH(display)) {
-		/* FIXME calculate proper pipe pixel rate for GMCH pfit */
-		crtc_state->pixel_rate =
-			crtc_state->hw.pipe_mode.crtc_clock;
-		crtc_state->pixel_rate_cdclk = crtc_state->pixel_rate;
-	} else {
-		crtc_state->pixel_rate =
-			ilk_pipe_pixel_rate(crtc_state);
-		crtc_state->pixel_rate_cdclk =
-			ilk_pipe_pixel_rate_cdclk(crtc_state);
-	}
+	crtc_state->pixel_rate =
+		intel_pipe_pixel_rate(crtc_state);
+	crtc_state->pixel_rate_cdclk =
+		intel_pipe_pixel_rate_cdclk(crtc_state);
 }
 
 static void intel_joiner_adjust_timings(const struct intel_crtc_state *crtc_state,
