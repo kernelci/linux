@@ -5577,9 +5577,7 @@ intel_pipe_config_compare(const struct intel_crtc_state *current_config,
 	}
 
 	PIPE_CONF_CHECK_X(gmch_pfit.control);
-	/* pfit ratios are autocomputed by the hw on gen4+ */
-	if (DISPLAY_VER(display) < 4)
-		PIPE_CONF_CHECK_X(gmch_pfit.pgm_ratios);
+	PIPE_CONF_CHECK_X(gmch_pfit.pgm_ratios);
 	PIPE_CONF_CHECK_X(gmch_pfit.lvds_border_bits);
 
 	/*
