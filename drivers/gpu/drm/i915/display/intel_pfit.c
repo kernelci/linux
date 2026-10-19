@@ -966,7 +966,10 @@ void intel_pfit_get_config(struct intel_crtc_state *crtc_state)
 
 bool i9xx_pfit_is_one_line_mode(const struct intel_crtc_state *crtc_state)
 {
-	return crtc_state->gmch_pfit.control & PFIT_ENABLE &&
+	struct intel_display *display = to_intel_display(crtc_state);
+
+	return DISPLAY_VER(display) < 4 &&
+		crtc_state->gmch_pfit.control & PFIT_ENABLE &&
 		drm_rect_width(&crtc_state->pipe_src) > 1024;
 }
 
