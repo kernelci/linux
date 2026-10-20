@@ -720,36 +720,49 @@ void i9xx_pfit_disable(const struct intel_crtc_state *old_crtc_state)
 	intel_de_write(display, PFIT_CONTROL(display), 0);
 }
 
-static bool i9xx_has_pfit(struct intel_display *display)
-{
-	if (display->platform.i830)
-		return false;
-
-	return DISPLAY_VER(display) >= 4 ||
-		display->platform.pineview || display->platform.mobile;
-}
-
-static void i9xx_pfit_get_config(struct intel_crtc_state *crtc_state)
+static void i965_pfit_get_config(struct intel_crtc_state *crtc_state)
 {
 	struct intel_display *display = to_intel_display(crtc_state);
 	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
 	enum pipe pipe;
 	u32 tmp;
 
-	if (!i9xx_has_pfit(display))
-		return;
-
 	tmp = intel_de_read(display, PFIT_CONTROL(display));
 	if (!(tmp & PFIT_ENABLE))
 		return;
 
 	/* Check whether the pfit is attached to our pipe. */
-	if (DISPLAY_VER(display) >= 4)
-		pipe = REG_FIELD_GET(PFIT_PIPE_MASK, tmp);
-	else
-		pipe = PIPE_B;
-
+	pipe = REG_FIELD_GET(PFIT_PIPE_MASK, tmp);
 	if (pipe != crtc->pipe)
+		return;
+
+	crtc_state->gmch_pfit.control = tmp;
+}
+
+static bool i9xx_has_pfit(struct intel_crtc *crtc)
+{
+	struct intel_display *display = to_intel_display(crtc);
+
+	if (crtc->pipe != PIPE_B)
+		return false;
+
+	if (display->platform.i830)
+		return false;
+
+	return display->platform.pineview || display->platform.mobile;
+}
+
+static void i9xx_pfit_get_config(struct intel_crtc_state *crtc_state)
+{
+	struct intel_display *display = to_intel_display(crtc_state);
+	struct intel_crtc *crtc = to_intel_crtc(crtc_state->uapi.crtc);
+	u32 tmp;
+
+	if (!i9xx_has_pfit(crtc))
+		return;
+
+	tmp = intel_de_read(display, PFIT_CONTROL(display));
+	if (!(tmp & PFIT_ENABLE))
 		return;
 
 	crtc_state->gmch_pfit.control = tmp;
@@ -761,10 +774,15 @@ void intel_pfit_get_config(struct intel_crtc_state *crtc_state)
 {
 	struct intel_display *display = to_intel_display(crtc_state);
 
-	if (HAS_GMCH(display))
-		i9xx_pfit_get_config(crtc_state);
-	else if (DISPLAY_VER(display) >= 9)
-		skl_scaler_get_config(crtc_state);
-	else
-		ilk_pfit_get_config(crtc_state);
+	if (HAS_GMCH(display)) {
+		if (DISPLAY_VER(display) >= 4)
+			i965_pfit_get_config(crtc_state);
+		else
+			i9xx_pfit_get_config(crtc_state);
+	} else {
+		if (DISPLAY_VER(display) >= 9)
+			skl_scaler_get_config(crtc_state);
+		else
+			ilk_pfit_get_config(crtc_state);
+	}
 }
