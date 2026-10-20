@@ -357,11 +357,11 @@ void intel_crtc_state_dump(const struct intel_crtc_state *pipe_config,
 			   pipe_config->gmch_pfit.control,
 			   pipe_config->gmch_pfit.pgm_ratios,
 			   pipe_config->gmch_pfit.lvds_border_bits);
-	else
-		drm_printf(&p, "pfit: " DRM_RECT_FMT ", %s, force thru: %s\n",
-			   DRM_RECT_ARG(&pipe_config->pfit.dst),
-			   str_enabled_disabled(pipe_config->pfit.enabled),
-			   str_yes_no(pipe_config->pfit.force_thru));
+
+	drm_printf(&p, "pfit: " DRM_RECT_FMT ", %s, force thru: %s\n",
+		   DRM_RECT_ARG(&pipe_config->pfit.dst),
+		   str_enabled_disabled(pipe_config->pfit.enabled),
+		   str_yes_no(pipe_config->pfit.force_thru));
 
 	drm_printf(&p, "sharpness strength: %d, sharpness tap size: %d, sharpness enable: %d\n",
 		   pipe_config->pfit.casf.strength,
