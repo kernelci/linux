@@ -563,7 +563,10 @@ static int i9xx_pfit_check_scaling(const struct intel_crtc_state *crtc_state)
 	int hscale, vscale, max_scale;
 	struct drm_rect src;
 
-	max_scale = 0x10000;
+	if (DISPLAY_VER(display) >= 4)
+		max_scale = 0x20000 - 1;
+	else
+		max_scale = 0x10000;
 
 	drm_rect_init(&src, 0, 0, pipe_src_w << 16, pipe_src_h << 16);
 
