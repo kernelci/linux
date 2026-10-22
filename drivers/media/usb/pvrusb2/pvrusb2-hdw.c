@@ -4036,14 +4036,26 @@ int pvr2_hdw_cmd_decoder_reset(struct pvr2_hdw *hdw)
 }
 
 
+static int pvr2_hdw_is_hcw_160xxx(struct pvr2_hdw *hdw)
+{
+	return le16_to_cpu(hdw->usb_dev->descriptor.idVendor) == 0x2040 &&
+	       (le16_to_cpu(hdw->usb_dev->descriptor.idProduct) == 0x7502 ||
+		le16_to_cpu(hdw->usb_dev->descriptor.idProduct) == 0x7510);
+}
+
+/* Nonzero if the demod is held in reset while in analog mode */
+int pvr2_hdw_demod_reset_in_analog(struct pvr2_hdw *hdw)
+{
+	return hdw->hdw_desc->digital_control_scheme ==
+		PVR2_DIGITAL_SCHEME_HAUPPAUGE && !pvr2_hdw_is_hcw_160xxx(hdw);
+}
+
 static int pvr2_hdw_cmd_hcw_demod_reset(struct pvr2_hdw *hdw, int onoff)
 {
 	hdw->flag_ok = !0;
 
 	/* Use this for Hauppauge 160xxx only */
-	if (le16_to_cpu(hdw->usb_dev->descriptor.idVendor) == 0x2040 &&
-	    (le16_to_cpu(hdw->usb_dev->descriptor.idProduct) == 0x7502 ||
-	     le16_to_cpu(hdw->usb_dev->descriptor.idProduct) == 0x7510)) {
+	if (pvr2_hdw_is_hcw_160xxx(hdw)) {
 		pr_debug("%s(): resetting demod on Hauppauge 160xxx platform skipped\n",
 			 __func__);
 		/* Can't reset 160xxx or it will trash Demod tristate */
