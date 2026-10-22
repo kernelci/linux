@@ -1302,7 +1302,15 @@ static void input_change(struct i2c_client *client)
 
 	cx25840_and_or(client, 0x810, ~0x01, 1);
 
-	if (state->radio) {
+	if (state->radio && state->radio_sif_5_5mhz) {
+		/*
+		 * Forced 5.5 MHz FM (A2-BG standard), MONO1, which applies
+		 * 50 us de-emphasis.  The 4.5 MHz A2-M path (75 us) clips
+		 * broadcast FM deviation.
+		 */
+		cx25840_write(client, 0x808, 0x40);
+		cx25840_write(client, 0x80b, 0x00);
+	} else if (state->radio) {
 		cx25840_write(client, 0x808, 0xf9);
 		cx25840_write(client, 0x80b, 0x00);
 	} else if (std & V4L2_STD_525_60) {
@@ -2565,8 +2573,18 @@ static int cx25840_g_tuner(struct v4l2_subdev *sd, struct v4l2_tuner *vt)
 	u8 mode;
 	int val = 0;
 
-	if (state->radio)
+	if (state->radio) {
+		if (!state->radio_sif_5_5mhz)
+			return 0;
+		/*
+		 * The bridge calls this after the tuner, so that the audio
+		 * decoder has the last word: this FM path is mono only.
+		 */
+		vt->capability &= ~V4L2_TUNER_CAP_STEREO;
+		vt->rxsubchans = V4L2_TUNER_SUB_MONO;
+		vt->audmode = V4L2_TUNER_MODE_MONO;
 		return 0;
+	}
 
 	vt->signal = vpres ? 0xffff : 0x0;
 	if (is_cx2583x(state))
@@ -3972,6 +3990,7 @@ static int cx25840_probe(struct i2c_client *client)
 		struct cx25840_platform_data *pdata = client->dev.platform_data;
 
 		state->pvr150_workaround = pdata->pvr150_workaround;
+		state->radio_sif_5_5mhz = pdata->radio_sif_5_5mhz;
 	}
 
 	cx25840_ir_probe(sd);

@@ -43,6 +43,8 @@ enum cx25840_media_pads {
  * @mute:		audio mute V4L2 control (non-cx2583x devices only)
  * @pvr150_workaround:	whether we enable workaround for Hauppauge PVR150
  *			hardware bug (audio dropping out)
+ * @radio_sif_5_5mhz:	FM radio arrives as a 5.5 MHz sound IF (e.g. from a
+ *			TDA8295): demodulate it as 5.5 MHz FM mono
  * @generic_mode:	whether we disable ivtv-specific hacks
  *			this mode gets turned on when the bridge driver calls
  *			cx25840 subdevice init core op
@@ -78,6 +80,7 @@ struct cx25840_state {
 		struct v4l2_ctrl *mute;
 	};
 	int pvr150_workaround;
+	int radio_sif_5_5mhz;
 	bool generic_mode;
 	int radio;
 	v4l2_std_id std;

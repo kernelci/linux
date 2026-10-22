@@ -253,10 +253,14 @@ enum cx23885_io_pad {
  * is to select the audio standard explicitly. Many thanks to Hauppauge for
  * providing this information.
  *
- * This platform data only needs to be supplied by the ivtv driver.
+ * radio_sif_5_5mhz is for boards whose analog tuner delivers FM radio to the
+ * cx2584x as a 5.5 MHz sound IF, as the TDA8295 does in FM radio mode (e.g.
+ * the Hauppauge HVR-1950).  The audio firmware's FM radio mode does not find
+ * that carrier, so radio is demodulated as forced 5.5 MHz FM mono instead.
  */
 struct cx25840_platform_data {
 	int pvr150_workaround;
+	int radio_sif_5_5mhz;
 };
 
 #endif
