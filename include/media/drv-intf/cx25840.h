@@ -255,8 +255,10 @@ enum cx23885_io_pad {
  *
  * radio_sif_5_5mhz is for boards whose analog tuner delivers FM radio to the
  * cx2584x as a 5.5 MHz sound IF, as the TDA8295 does in FM radio mode (e.g.
- * the Hauppauge HVR-1950).  The audio firmware's FM radio mode does not find
- * that carrier, so radio is demodulated as forced 5.5 MHz FM mono instead.
+ * the Hauppauge HVR-1950).  The standard audio firmware's FM radio mode does
+ * not find that carrier, so radio is demodulated as forced 5.5 MHz FM mono.
+ * If the optional v4l-cx25840-fmstereo.fw (Hauppauge's HVR-1950 audio
+ * firmware) is installed, it is loaded instead and radio is FM stereo.
  */
 struct cx25840_platform_data {
 	int pvr150_workaround;
