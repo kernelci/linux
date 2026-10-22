@@ -2367,7 +2367,7 @@ static int em28xx_v4l2_open(struct file *filp)
 		return -ERESTARTSYS;
 
 	v4l2 = dev->v4l2;
-	if (!v4l2) {
+	if (!v4l2 || dev->disconnected) {
 		mutex_unlock(&dev->lock);
 		return -ENODEV;
 	}
