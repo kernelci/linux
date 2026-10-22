@@ -79,8 +79,17 @@ static unsigned int test_timeout = 120;
  * processes and robust so that a test killed while holding it doesn't leave
  * the budget locked, see mutex_init_pshared_robust().
  */
+struct mlock_child_time {
+	struct timespec start_time;
+	bool started;
+};
+
 struct mlock_budget {
 	struct mutex lock;
+	size_t size;
+	size_t nr_slots;
+	size_t next_slot;
+	struct mlock_child_time slots[];
 };
 
 static struct mlock_budget *mlock_budget;
@@ -388,6 +397,7 @@ struct child_test {
 	struct timespec start_time;
 	struct timespec end_time;
 	struct timespec timeout_time;
+	struct mlock_child_time *mlock_time;
 };
 
 static jmp_buf run_test_jmp_buf;
@@ -418,6 +428,8 @@ static int run_test_case_mlocked(struct child_test *child)
 	int err;
 
 	mutex_lock(&mlock_budget->lock);
+	clock_gettime(CLOCK_MONOTONIC, &child->mlock_time->start_time);
+	__atomic_store_n(&child->mlock_time->started, true, __ATOMIC_RELEASE);
 	err = run_test_case(child);
 	mutex_unlock(&mlock_budget->lock);
 
@@ -463,7 +475,6 @@ static int run_test_child(struct child_process *process)
 		SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGINT, SIGPIPE, SIGQUIT, SIGSEGV, SIGTERM,
 	};
 	struct child_test *child = container_of(process, struct child_test, process);
-	bool needs_mlock = mlock_budget && child->test->needs_mlock;
 	int err, sig;
 
 	/*
@@ -490,7 +501,7 @@ static int run_test_child(struct child_process *process)
 	pr_debug("---- start ----\n");
 	pr_debug("test child forked, pid %d\n", getpid());
 
-	if (needs_mlock)
+	if (child->mlock_time)
 		err = run_test_case_mlocked(child);
 	else
 		err = run_test_case(child);
@@ -1031,6 +1042,28 @@ static void kill_child_process(pid_t pid, int sig)
 		kill(pid, sig);
 }
 
+static bool child_test__started(const struct child_test *child, struct timespec *start_time)
+{
+	if (child->mlock_time) {
+		if (!__atomic_load_n(&child->mlock_time->started, __ATOMIC_ACQUIRE))
+			return false;
+		*start_time = child->mlock_time->start_time;
+		return true;
+	}
+	*start_time = child->start_time;
+	return true;
+}
+
+static double child_test__elapsed_secs(const struct child_test *child,
+				       const struct timespec *end_time)
+{
+	struct timespec start_time;
+
+	if (!child_test__started(child, &start_time))
+		start_time = child->start_time;
+	return timespec_diff_secs(end_time, &start_time);
+}
+
 static void check_child_timeout(struct child_test *child, const struct timespec *now)
 {
 	pid_t pid;
@@ -1047,7 +1080,12 @@ static void check_child_timeout(struct child_test *child, const struct timespec 
 		return;
 
 	if (!child->timed_out) {
-		if (timespec_diff_secs(now, &child->start_time) >= test_timeout) {
+		struct timespec start_time;
+
+		if (!child_test__started(child, &start_time))
+			return;
+
+		if (timespec_diff_secs(now, &start_time) >= test_timeout) {
 			child->timed_out = true;
 			child->timeout_time = *now;
 			pr_debug3("Timeout (%us) for test %d.%d (pid %d), sending SIGTERM\n",
@@ -1266,8 +1304,7 @@ static void finish_test(struct child_test **child_tests, int running_test, int c
 		print_test_failure_snippet(stderr, err_output.buf);
 
 	clock_gettime(CLOCK_MONOTONIC, &end_time);
-	elapsed = (end_time.tv_sec - child_test->start_time.tv_sec) +
-		  (end_time.tv_nsec - child_test->start_time.tv_nsec) / 1000000000.0;
+	elapsed = child_test__elapsed_secs(child_test, &end_time);
 
 	print_test_result(t, curr_suite, curr_test_case, ret, width, /*running=*/0,
 			  err_output.buf, elapsed);
@@ -1543,9 +1580,7 @@ static int finish_tests_parallel(struct child_test **child_tests, size_t num_tes
 				 (child->result == TEST_FAIL || child->result == TEST_TIMEOUT))
 				print_test_failure_snippet(stderr, child->err_output.buf);
 
-			elapsed = (child->end_time.tv_sec - child->start_time.tv_sec) +
-				  (child->end_time.tv_nsec -
-				   child->start_time.tv_nsec) / 1000000000.0;
+			elapsed = child_test__elapsed_secs(child, &child->end_time);
 
 			print_test_result(child->test, child->suite_num, child->test_case_num,
 					  child->result, width, 0, child->err_output.buf, elapsed);
@@ -1617,6 +1652,9 @@ static int start_test(struct test_suite *test, int curr_suite, int curr_test_cas
 		(*child)->process.stdout_to_stderr = 1;
 	}
 	(*child)->process.no_exec_cmd = run_test_child;
+	if (mlock_budget && test->needs_mlock && !sequential && pass == 1 &&
+	    mlock_budget->next_slot < mlock_budget->nr_slots)
+		(*child)->mlock_time = &mlock_budget->slots[mlock_budget->next_slot++];
 	clock_gettime(CLOCK_MONOTONIC, &(*child)->start_time);
 	err = start_command(&(*child)->process);
 	if (err)
@@ -2210,10 +2248,10 @@ static struct test_suite **build_suites(void)
 #undef for_each_suite
 }
 
-static bool perf_test__shares_mlock_budget(struct test_suite **suites, int argc,
-					   const char *argv[], struct intlist *skiplist)
+static size_t perf_test__count_mlock_budget(struct test_suite **suites, int argc,
+					    const char *argv[], struct intlist *skiplist)
 {
-	int sharing = 0;
+	size_t sharing = 0;
 
 	/* The selection rules mirrored here are __cmd_test()'s: when they change, change both. */
 	for (int curr_suite = 0; suites[curr_suite]; curr_suite++) {
@@ -2235,10 +2273,8 @@ static bool perf_test__shares_mlock_budget(struct test_suite **suites, int argc,
 					       curr_suite, argc, argv))
 				sharing += runs_per_test;
 		}
-		if (sharing > 1)
-			return true;
 	}
-	return false;
+	return sharing;
 }
 
 /*
@@ -2261,6 +2297,8 @@ static bool perf_test__mlock_budget_exhaustible(void)
 static void perf_test__setup_mlock_budget(struct test_suite **suites, int argc,
 					  const char *argv[], struct intlist *skiplist)
 {
+	size_t sharing, size;
+
 	/* Nothing can be denied the budget, nothing to take turns for. */
 	if (!perf_test__mlock_budget_exhaustible()) {
 		pr_debug("Not taking turns using the perf mlock budget: nothing can exhaust it\n");
@@ -2268,19 +2306,26 @@ static void perf_test__setup_mlock_budget(struct test_suite **suites, int argc,
 	}
 
 	/* Nothing runs at the same time, nothing to share the budget with. */
-	if (sequential || !perf_test__shares_mlock_budget(suites, argc, argv, skiplist))
+	if (sequential)
 		return;
 
-	mlock_budget = mmap(NULL, sizeof(*mlock_budget), PROT_READ | PROT_WRITE,
+	sharing = perf_test__count_mlock_budget(suites, argc, argv, skiplist);
+	if (sharing <= 1)
+		return;
+
+	size = sizeof(*mlock_budget) + sharing * sizeof(mlock_budget->slots[0]);
+	mlock_budget = mmap(NULL, size, PROT_READ | PROT_WRITE,
 			    MAP_SHARED | MAP_ANONYMOUS, /*fd=*/-1, /*offset=*/0);
 	if (mlock_budget == MAP_FAILED) {
 		mlock_budget = NULL;
 		pr_err("Failed to map the shared area used to take turns using the perf mlock budget\n");
 		return;
 	}
+	mlock_budget->size = size;
+	mlock_budget->nr_slots = sharing;
 
 	if (!mutex_init_pshared_robust(&mlock_budget->lock)) {
-		munmap(mlock_budget, sizeof(*mlock_budget));
+		munmap(mlock_budget, size);
 		mlock_budget = NULL;
 		pr_debug("Not taking turns using the perf mlock budget\n");
 	}
@@ -2292,7 +2337,7 @@ static void perf_test__teardown_mlock_budget(void)
 		return;
 
 	mutex_destroy(&mlock_budget->lock);
-	munmap(mlock_budget, sizeof(*mlock_budget));
+	munmap(mlock_budget, mlock_budget->size);
 	mlock_budget = NULL;
 }
 
