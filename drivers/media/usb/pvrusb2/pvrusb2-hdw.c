@@ -2015,7 +2015,22 @@ static int pvr2_hdw_load_subdev(struct pvr2_hdw *hdw,
 		return -EINVAL;
 	}
 
-	if (i2ccnt == 1) {
+	if (i2ccnt == 1 && mid == PVR2_CLIENT_ID_CX25840) {
+		/* in hdw: the I2C core keeps the platform_data pointer */
+		struct i2c_board_info info = {
+			.addr = i2caddr[0],
+			.platform_data = &hdw->cx25840_pdata,
+		};
+
+		hdw->cx25840_pdata.radio_sif_5_5mhz =
+			hdw->hdw_desc->flag_radio_sif_5_5mhz;
+		pvr2_trace(PVR2_TRACE_INIT,
+			   "Module ID %u: Setting up with specified i2c address 0x%x",
+			   mid, i2caddr[0]);
+		strscpy(info.type, fname, sizeof(info.type));
+		sd = v4l2_i2c_new_subdev_board(&hdw->v4l2_dev, &hdw->i2c_adap,
+					       &info, NULL);
+	} else if (i2ccnt == 1) {
 		pvr2_trace(PVR2_TRACE_INIT,
 			   "Module ID %u: Setting up with specified i2c address 0x%x",
 			   mid, i2caddr[0]);
@@ -5068,6 +5083,16 @@ void pvr2_hdw_status_poll(struct pvr2_hdw *hdw)
 	   now.  (Of course, no sub-drivers seem to implement it either.
 	   But now it's a chicken and egg problem...) */
 	v4l2_device_call_all(&hdw->v4l2_dev, 0, tuner, g_tuner, vtp);
+	if (vtp->type == V4L2_TUNER_RADIO &&
+	    hdw->hdw_desc->flag_radio_sif_5_5mhz) {
+		/*
+		 * Whether this FM path is stereo depends on the cx2584x
+		 * audio firmware: ask it again last, so tuner-core's
+		 * default doesn't decide.
+		 */
+		v4l2_device_call_all(&hdw->v4l2_dev, PVR2_CLIENT_ID_CX25840,
+				     tuner, g_tuner, vtp);
+	}
 	pvr2_trace(PVR2_TRACE_CHIPS, "subdev status poll type=%u strength=%u audio=0x%x cap=0x%x low=%u hi=%u",
 		   vtp->type,
 		   vtp->signal, vtp->rxsubchans, vtp->capability,
