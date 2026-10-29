@@ -31,6 +31,9 @@
      */
 
 #define VIDEOMEMSIZE	(1*1024*1024)	/* 1 MB */
+#define MAX_VIDEOMEMSIZE	(512UL * 1024 * 1024)
+#define MAX_XRES		8192U
+#define MAX_YRES		8192U
 
 static void *videomemory;
 static u_long videomemorysize = VIDEOMEMSIZE;
@@ -142,6 +145,10 @@ static int vfb_check_var(struct fb_var_screeninfo *var,
 		var->xres = 1;
 	if (!var->yres)
 		var->yres = 1;
+	var->xres = min(var->xres, MAX_XRES);
+	var->yres = min(var->yres, MAX_YRES);
+	var->xres_virtual = min(var->xres_virtual, MAX_XRES);
+	var->yres_virtual = min(var->yres_virtual, MAX_YRES);
 	if (var->xres > var->xres_virtual)
 		var->xres_virtual = var->xres;
 	if (var->yres > var->yres_virtual)
@@ -158,6 +165,9 @@ static int vfb_check_var(struct fb_var_screeninfo *var,
 		var->bits_per_pixel = 32;
 	else
 		return -EINVAL;
+
+	var->xoffset = min(var->xoffset, MAX_XRES - var->xres);
+	var->yoffset = min(var->yoffset, MAX_YRES - var->yres);
 
 	if (var->xres_virtual < var->xoffset + var->xres)
 		var->xres_virtual = var->xoffset + var->xres;
@@ -434,8 +444,11 @@ static int __init vfb_setup(char *options)
 static int vfb_probe(struct platform_device *dev)
 {
 	struct fb_info *info;
-	unsigned int size = PAGE_ALIGN(videomemorysize);
+	unsigned int size;
 	int retval = -ENOMEM;
+
+	videomemorysize = min(videomemorysize, MAX_VIDEOMEMSIZE);
+	size = PAGE_ALIGN(videomemorysize);
 
 	/*
 	 * For real video cards we use ioremap.
