@@ -1137,6 +1137,7 @@ class SphinxDependencyChecker(MissingCheckers):
             re.compile("Devuan"):                     self.give_debian_hints,
             re.compile("Kali"):                       self.give_debian_hints,
             re.compile("Mint"):                       self.give_debian_hints,
+            re.compile("Deepin"):                     self.give_debian_hints,
 
             re.compile("openSUSE"):                   self.give_opensuse_hints,
 
