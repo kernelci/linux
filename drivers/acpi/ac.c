@@ -158,7 +158,7 @@ static int acpi_ac_battery_notify(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
-static int __init thinkpad_e530_quirk(const struct dmi_system_id *d)
+static int __init ac_sleep_quirk(const struct dmi_system_id *d)
 {
 	ac_sleep_before_get_state_ms = 1000;
 	return 0;
@@ -181,7 +181,7 @@ static const struct dmi_system_id ac_dmi_table[]  __initconst = {
 	},
 	{
 		/* Lenovo Thinkpad e530, see comment in acpi_ac_notify() */
-		.callback = thinkpad_e530_quirk,
+		.callback = ac_sleep_quirk,
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "LENOVO"),
 			DMI_MATCH(DMI_PRODUCT_NAME, "32597CG"),
