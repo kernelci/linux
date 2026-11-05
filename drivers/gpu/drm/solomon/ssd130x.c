@@ -2217,9 +2217,7 @@ static int ssd130x_init_modeset(struct ssd130x_device *ssd130x)
 		return ret;
 	}
 
-	drm_mode_config_reset(drm);
-
-	return 0;
+	return drm_mode_config_create_initial_state(drm);
 }
 
 static int ssd130x_get_resources(struct ssd130x_device *ssd130x)
