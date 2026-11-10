@@ -77,8 +77,8 @@ u32 i915_get_vblank_counter(struct drm_crtc *crtc)
 	struct drm_vblank_crtc *vblank = drm_crtc_vblank_crtc(crtc);
 	const struct drm_display_mode *mode = &vblank->hwmode;
 	enum pipe pipe = to_intel_crtc(crtc)->pipe;
-	u32 pixel, vbl_start, hsync_start, htotal;
-	u64 frame;
+	u32 frame, pixel, vbl_start, hsync_start, htotal;
+	u64 val;
 
 	/*
 	 * On i965gm TV output the frame counter only works up to
@@ -109,11 +109,11 @@ u32 i915_get_vblank_counter(struct drm_crtc *crtc)
 	 * we get a low value that's stable across two reads of the high
 	 * register.
 	 */
-	frame = intel_de_read64_2x32_volatile_fw(display, PIPEFRAMEPIXEL(display, pipe),
-						 PIPEFRAMEHIGH(display, pipe));
+	val = intel_de_read64_2x32_volatile_fw(display, PIPEFRAMEPIXEL(display, pipe),
+					       PIPEFRAMEHIGH(display, pipe));
 
-	pixel = REG_FIELD_GET(PIPE_PIXEL_MASK, frame);
-	frame = REG_FIELD_GET64(PIPE_FRAME_MASK, frame);
+	pixel = REG_FIELD_GET(PIPE_PIXEL_MASK, val);
+	frame = REG_FIELD_GET64(PIPE_FRAME_MASK, val);
 
 	/*
 	 * The frame counter increments at beginning of active.
