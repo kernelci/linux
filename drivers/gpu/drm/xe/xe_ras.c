@@ -669,13 +669,29 @@ static u8 handle_device_memory_errors(struct xe_device *xe, struct xe_ras_error_
 				 "Data parity error detected\n");
 		break;
 	case XE_RAS_MEMORY_DB_ECC:
+		/*
+		 * Double-bit ECC errors are non-fatal errors and are reported via IRQ.
+		 * On a race between AER for device fatal errors and non-fatal double-bit ECC
+		 * errors, if AER pci error handlers execute first it will get all errors as
+		 * a single response from system controller, which can include the double-bit
+		 * ECC errors. This leads to unnecessary offlining of pages, since an SBR clears
+		 * them on reload and firmware drops them from its queue once read.
+		 * Skip handling of double-bit ECC errors on the AER path to avoid this.
+		 *
+		 * TODO: Remove this check once AER handling is optimized to retain soft
+		 * offlined pages.
+		 */
+		if (xe_ras_is_aer_internal_error(xe)) {
+			xe_info(xe, "[RAS]: Skipping double-bit ECC error handling on AER path\n");
+			break;
+		}
+
 		ret = handle_page_offline(xe, info->sw_address, true);
 		xe_log_comp(xe, ret ? cper_sev : CPER_SEV_INFORMATIONAL,
 			    DEVICE_MEMORY, &arr->counter, sizeof(arr->counter),
 			    "Double-bit ECC error detected at sw address 0x%llx\n",
 			    info->sw_address);
 		/*
-		 * Double-bit ECC errors are non-fatal errors and are reported via IRQ.
 		 * Wedge the device with a bus reset for errors that require SBR to recover.
 		 * TODO: Trigger SBR using pci_reset_bus
 		 */
