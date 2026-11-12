@@ -1254,6 +1254,26 @@ u32 xe_ras_get_max_pages(struct xe_device *xe)
 }
 
 /**
+ * xe_ras_is_aer_internal_error() - Check if an uncorrectable internal error was reported via AER
+ * @xe: xe device instance
+ *
+ * Return: true if an uncorrectable internal error was reported via AER, false otherwise.
+ */
+bool xe_ras_is_aer_internal_error(struct xe_device *xe)
+{
+	return xe->ras.state.aer_internal_error;
+}
+
+/**
+ * xe_ras_set_aer_internal_error() - Set if an uncorrectable internal error is reported via AER
+ * @xe: xe device instance
+ */
+void xe_ras_set_aer_internal_error(struct xe_device *xe)
+{
+	xe->ras.state.aer_internal_error = true;
+}
+
+/**
  * xe_ras_init - Initialize Xe RAS
  * @xe: xe device instance
  *
