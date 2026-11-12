@@ -26,13 +26,8 @@ static void prepare_device_for_reset(struct pci_dev *pdev)
 	struct xe_gt *gt;
 	u8 id;
 
-	/*
-	 * Wedge the device to prevent userspace access but do not send the uevent.
-	 * xe_wedge_fini() releases runtime pm if wedged flag is set, so acquire a runtime
-	 * pm reference to avoid underflow.
-	 */
-	if (!atomic_xchg(&xe->wedged.flag, 1))
-		xe_pm_runtime_get_noresume(xe);
+	/* Wedge the device to prevent userspace access but do not send the uevent. */
+	xe_wedge_get(xe);
 
 	xe_device_set_in_reset(xe);
 
@@ -46,10 +41,16 @@ static void prepare_device_for_reset(struct pci_dev *pdev)
 
 static pci_ers_result_t ras_action_to_pci_result(struct pci_dev *pdev, u8 action)
 {
+	struct xe_device *xe = xe_any_to_xe(pdev);
+
 	switch (action) {
 	case XE_RAS_RECOVERY_ACTION_RECOVERED:
 		return PCI_ERS_RESULT_RECOVERED;
 	case XE_RAS_RECOVERY_ACTION_RESET:
+		/* We should not be doing such ugly hacks, reuse FLR callbacks and drop this. */
+		if (atomic_xchg(&xe->wedged.perm, 1))
+			return PCI_ERS_RESULT_DISCONNECT;
+
 		prepare_device_for_reset(pdev);
 		return PCI_ERS_RESULT_NEED_RESET;
 	case XE_RAS_RECOVERY_ACTION_DISCONNECT:
@@ -111,6 +112,10 @@ static pci_ers_result_t xe_pci_error_detected(struct pci_dev *pdev, pci_channel_
 	case pci_channel_io_normal:
 		return PCI_ERS_RESULT_CAN_RECOVER;
 	case pci_channel_io_frozen:
+		/* We should not be doing such ugly hacks, reuse FLR callbacks and drop this. */
+		if (atomic_xchg(&xe->wedged.perm, 1))
+			return PCI_ERS_RESULT_DISCONNECT;
+
 		prepare_device_for_reset(pdev);
 		return PCI_ERS_RESULT_NEED_RESET;
 	default:
@@ -171,11 +176,6 @@ static pci_ers_result_t xe_pci_error_slot_reset(struct pci_dev *pdev)
 	if (pdev->driver->probe(pdev, ent))
 		return PCI_ERS_RESULT_DISCONNECT;
 
-	xe = pdev_to_xe_device(pdev);
-
-	/* Wedge the device to prevent I/O operations till the resume callback */
-	atomic_set(&xe->wedged.flag, 1);
-
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
@@ -184,8 +184,6 @@ static void xe_pci_error_resume(struct pci_dev *pdev)
 	struct xe_device *xe = pdev_to_xe_device(pdev);
 
 	xe_info(xe, "PCI error: resume\n");
-
-	atomic_set(&xe->wedged.flag, 0);
 }
 
 const struct pci_error_handlers xe_pci_error_handlers = {
