@@ -913,6 +913,13 @@ static int do_gt_restart(struct xe_gt *gt)
 void xe_gt_flr_prepare(struct xe_gt *gt)
 {
 	xe_gt_sanitize(gt);
+
+	if (xe_gt_is_main_type(gt)) {
+		struct xe_tile *tile = gt_to_tile(gt);
+
+		xe_migrate_flr_prepare(tile->migrate);
+	}
+
 	xe_uc_flr_prepare(&gt->uc);
 	xe_pagefault_reset(gt_to_xe(gt), gt);
 	xe_tlb_inval_reset(&gt->tlb_inval);
@@ -926,6 +933,16 @@ void xe_gt_flr_prepare(struct xe_gt *gt)
  */
 int xe_gt_reinit(struct xe_gt *gt)
 {
+	int err;
+
+	if (xe_gt_is_main_type(gt)) {
+		struct xe_tile *tile = gt_to_tile(gt);
+
+		err = xe_migrate_reinit(tile->migrate);
+		if (err)
+			return err;
+	}
+
 	return xe_uc_reinit(&gt->uc);
 }
 
