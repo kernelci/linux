@@ -300,6 +300,22 @@ static const struct dmi_system_id upside_down_sensor_dmi_ids[] = {
 		},
 		.driver_data = "OVTID858",
 	},
+	{
+		/* Microsoft Surface Pro 8, front sensor */
+		.matches = {
+			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Microsoft Corporation"),
+			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "Surface Pro 8"),
+		},
+		.driver_data = "INT33BE",
+	},
+	{
+		/* Microsoft Surface Pro 8, rear sensor */
+		.matches = {
+			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "Microsoft Corporation"),
+			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "Surface Pro 8"),
+		},
+		.driver_data = "OVTID858",
+	},
 	{} /* Terminating entry */
 };
 
