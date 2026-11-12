@@ -5,6 +5,8 @@
 
 #include <linux/bitfield.h>
 
+#include <generated/xe_device_wa_oob.h>
+
 #include "xe_assert.h"
 #include "xe_bo.h"
 #include "xe_configfs.h"
@@ -23,6 +25,7 @@
 #include "xe_sysctrl_mailbox.h"
 #include "xe_sysctrl_mailbox_types.h"
 #include "xe_ttm_vram_mgr.h"
+#include "xe_wa.h"
 #include "xe_wedge.h"
 
 /* Any non-null entry marks the page as offlined by firmware */
@@ -671,8 +674,15 @@ static u8 handle_device_memory_errors(struct xe_device *xe, struct xe_ras_error_
 			    DEVICE_MEMORY, &arr->counter, sizeof(arr->counter),
 			    "Double-bit ECC error detected at sw address 0x%llx\n",
 			    info->sw_address);
-		if (ret)
+		/*
+		 * Double-bit ECC errors are non-fatal errors and are reported via IRQ.
+		 * Wedge the device with a bus reset for errors that require SBR to recover.
+		 * TODO: Trigger SBR using pci_reset_bus
+		 */
+		if (ret) {
+			xe_wedge_declare(xe, DRM_WEDGE_RECOVERY_BUS_RESET);
 			return XE_RAS_RECOVERY_ACTION_RESET;
+		}
 		break;
 	default:
 		xe_log_comp(xe, cper_sev, DEVICE_MEMORY, &arr->counter, sizeof(arr->counter),
@@ -818,8 +828,15 @@ enum xe_ras_recovery_action xe_ras_process_errors(struct xe_device *xe)
 		return XE_RAS_RECOVERY_ACTION_RECOVERED;
 
 	BUILD_BUG_ON(BITS_PER_TYPE(sent) < XE_RAS_COMP_MAX);
-	/* Default action */
+	/* Default action for PCIe bus errors */
 	final_action = XE_RAS_RECOVERY_ACTION_RECOVERED;
+
+	/*
+	 * Device fatal errors are downgraded to non-fatal and reported as an uncorrectable
+	 * internal error. Set the default action to reset.
+	 */
+	if (XE_DEVICE_WA(xe, 14028434957) && xe_ras_is_aer_internal_error(xe))
+		final_action = XE_RAS_RECOVERY_ACTION_RESET;
 
 	xe_sysctrl_create_command(&command, XE_SYSCTRL_GROUP_GFSP, XE_SYSCTRL_CMD_GET_SOC_ERROR,
 				  NULL, 0, &response, sizeof(response));

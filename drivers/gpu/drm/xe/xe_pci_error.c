@@ -5,8 +5,11 @@
 
 #include <linux/pci.h>
 
+#include <generated/xe_device_wa_oob.h>
+
 #include "xe_device.h"
 #include "xe_gt.h"
+#include "xe_hw_error.h"
 #include "xe_log.h"
 #include "xe_pci.h"
 #include "xe_pcode.h"
@@ -14,6 +17,7 @@
 #include "xe_printk.h"
 #include "xe_ras.h"
 #include "xe_survivability_mode.h"
+#include "xe_wa.h"
 #include "xe_wedge.h"
 
 static void prepare_device_for_reset(struct pci_dev *pdev)
@@ -87,12 +91,21 @@ static pci_ers_result_t xe_pci_error_detected(struct pci_dev *pdev, pci_channel_
 	if (state == pci_channel_io_perm_failure)
 		return PCI_ERS_RESULT_DISCONNECT;
 
-	/* If the device is already wedged or in survivability mode, do not attempt recovery */
-	if (xe_survivability_mode_is_boot_enabled(xe) || xe_wedged(xe))
+	/* If the device is already in survivability mode, do not attempt recovery */
+	if (xe_survivability_mode_is_boot_enabled(xe))
 		return PCI_ERS_RESULT_DISCONNECT;
 
-	if (is_aer_internal_error(pdev))
+	/*
+	 * If non-fatal error processing is in progress when uncorrectable internal error occurs,
+	 * flush and disable the worker to prevent further processing, as a reset is imminent.
+	 */
+	if (XE_DEVICE_WA(xe, 14028434957) && is_aer_internal_error(pdev)) {
 		xe_ras_set_aer_internal_error(xe);
+		xe_hw_error_work_disable(xe);
+	}
+
+	if (xe_wedged(xe))
+		return PCI_ERS_RESULT_DISCONNECT;
 
 	switch (state) {
 	case pci_channel_io_normal:
