@@ -13,6 +13,7 @@
 #include "xe_device.h"
 #include "xe_drm_ras.h"
 #include "xe_log.h"
+#include "xe_pci.h"
 #include "xe_pm.h"
 #include "xe_printk.h"
 #include "xe_ras.h"
@@ -504,22 +505,6 @@ static void get_offline_list(struct xe_device *xe)
 			      &response, sizeof(response), &response.common, false);
 }
 
-static struct pci_dev *find_usp_dev(struct pci_dev *pdev)
-{
-	struct pci_dev *vsp;
-
-	/*
-	 * Device Hierarchy:
-	 *
-	 * Upstream Switch Port (USP) --> Virtual Switch Port (VSP) --> SGunit (GPU endpoint)
-	 */
-	vsp = pci_upstream_bridge(pdev);
-	if (!vsp)
-		return NULL;
-
-	return pci_upstream_bridge(vsp);
-}
-
 static void ras_usp_aer_init(struct xe_device *xe)
 {
 	struct pci_dev *pdev = to_pci_dev(xe->drm.dev);
@@ -527,7 +512,7 @@ static void ras_usp_aer_init(struct xe_device *xe)
 	u16 aer_cap;
 	u32 status;
 
-	usp = find_usp_dev(pdev);
+	usp = xe_pci_get_usp_dev(pdev);
 	if (!usp)
 		return;
 
