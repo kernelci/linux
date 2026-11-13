@@ -695,7 +695,7 @@ static int __init powerclamp_probe(void)
 {
 
 	if (!x86_match_cpu(intel_powerclamp_ids)) {
-		pr_err("CPU does not support MWAIT\n");
+		pr_debug("Not an Intel processor or no MWAIT support\n");
 		return -ENODEV;
 	}
 
