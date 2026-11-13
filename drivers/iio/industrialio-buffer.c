@@ -1597,6 +1597,8 @@ static void iio_buffer_dmabuf_release(struct kref *ref)
 
 	buffer->access->detach_dmabuf(buffer, priv->block);
 
+	iio_buffer_put(buffer);
+
 	dma_buf_detach(attach->dmabuf, attach);
 	dma_buf_put(dmabuf);
 	kfree(priv);
@@ -1741,7 +1743,13 @@ static int iio_buffer_attach_dmabuf(struct iio_dev_buffer_pair *ib,
 	}
 
 	kref_init(&priv->ref);
-	priv->buffer = buffer;
+	/*
+	 * Hold a reference for the asynchronous dmabuf completion path
+	 * (iio_buffer_cleanup() -> iio_buffer_dmabuf_put() may run from a
+	 * work item after the device has been unbound); released in
+	 * iio_buffer_dmabuf_release().
+	 */
+	priv->buffer = iio_buffer_get(buffer);
 	priv->attach = attach;
 	attach->importer_priv = priv;
 
@@ -1789,6 +1797,7 @@ err_dmabuf_detach:
 err_dmabuf_put:
 	dma_buf_put(dmabuf);
 err_free_priv:
+	iio_buffer_put(priv->buffer);
 	kfree(priv);
 
 	return err;
